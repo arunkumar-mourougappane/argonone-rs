@@ -71,6 +71,10 @@ mean starting at `v0.1.0`.
   `gpiod` crate), classifying pulse width into reboot/shutdown/OLED-
   switch actions — replaces the old sysfs/RPi.GPIO code paths outright
   rather than replicating them (v0.1.0, W§1.1).
+- Config file compat parsers for `/etc/argononed.conf`,
+  `/etc/argononed-hdd.conf`, and `/etc/argonunits.conf`, unchanged from
+  the Python daemon's plain-text formats so an existing install carries
+  over without reformatting (v0.1.0, W§1.3).
 
 ### Changed
 
