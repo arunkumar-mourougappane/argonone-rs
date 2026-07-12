@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Display (OLED) — argonone</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+:root{
+  --bg:#F4F5F9; --panel:#FFFFFF; --panel-2:#F8F8FC; --border:#DFE1EA; --text:#1B1E27; --muted:#5B6172;
+  --accent:#6857E8; --accent-soft:#EDEAFB;
+  --good:#2E9C63; --good-soft:#E4F6EC; --warn:#B5791C; --warn-soft:#FBF0DC; --crit:#C43450; --crit-soft:#FBE4E9;
+  --shadow:0 1px 2px rgba(20,22,30,.06), 0 8px 24px rgba(20,22,30,.05);
+  --font-ui:'IBM Plex Sans',-apple-system,"Segoe UI",sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){ :root{ --bg:#0C0E13; --panel:#14171F; --panel-2:#181C25; --border:#262B36; --text:#E7E9F0; --muted:#8A90A3;
+  --accent:#8B7FFF; --accent-soft:rgba(139,127,255,.14); --good:#4FBE86; --good-soft:rgba(79,190,134,.14);
+  --warn:#E3A83F; --warn-soft:rgba(227,168,63,.14); --crit:#E5677A; --crit-soft:rgba(229,103,122,.14);
+  --shadow:0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.4); } }
+:root[data-theme="dark"]{ --bg:#0C0E13; --panel:#14171F; --panel-2:#181C25; --border:#262B36; --text:#E7E9F0; --muted:#8A90A3;
+  --accent:#8B7FFF; --accent-soft:rgba(139,127,255,.14); --good:#4FBE86; --good-soft:rgba(79,190,134,.14);
+  --warn:#E3A83F; --warn-soft:rgba(227,168,63,.14); --crit:#E5677A; --crit-soft:rgba(229,103,122,.14);
+  --shadow:0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.4); }
+:root[data-theme="light"]{ --bg:#F4F5F9; --panel:#FFFFFF; --panel-2:#F8F8FC; --border:#DFE1EA; --text:#1B1E27; --muted:#5B6172;
+  --accent:#6857E8; --accent-soft:#EDEAFB; --good:#2E9C63; --good-soft:#E4F6EC; --warn:#B5791C; --warn-soft:#FBF0DC;
+  --crit:#C43450; --crit-soft:#FBE4E9; --shadow:0 1px 2px rgba(20,22,30,.06), 0 8px 24px rgba(20,22,30,.05); }
+
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size:14px;}
+a{color:inherit;}
+.shell{display:flex;min-height:100vh;}
+.sidebar{width:216px;flex:none;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:18px 12px;position:sticky;top:0;height:100vh;}
+.brand{display:flex;align-items:center;gap:9px;padding:6px 8px 18px;border-bottom:1px solid var(--border);margin-bottom:10px;}
+.brand-mark{width:26px;height:26px;border-radius:7px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font-mono);font-weight:600;font-size:12px;flex:none;}
+.brand-name{font-weight:600;font-size:14px;}
+.brand-host{font-family:var(--font-mono);font-size:10.5px;color:var(--muted);}
+.navlist{list-style:none;padding:0;margin:6px 0 0;display:flex;flex-direction:column;gap:1px;}
+.navlist a{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;color:var(--muted);text-decoration:none;font-size:13px;font-weight:500;}
+.navlist a:hover{background:var(--panel-2);color:var(--text);}
+.navlist a.active{background:var(--accent-soft);color:var(--accent);}
+.navlist svg{width:16px;height:16px;flex:none;}
+.navlist .divider{height:1px;background:var(--border);margin:10px 4px;}
+.sidebar-foot{margin-top:auto;padding-top:12px;border-top:1px solid var(--border);display:flex;align-items:center;gap:9px;}
+.avatar{width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:11px;font-weight:600;flex:none;}
+.user-name{font-size:12.5px;font-weight:600;line-height:1.3;}
+.user-role{font-family:var(--font-mono);font-size:10px;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;}
+.main{flex:1;min-width:0;}
+.statusbar{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--border);background:var(--panel);}
+.stat{padding:13px 22px;border-right:1px solid var(--border);}
+.stat-label{font-family:var(--font-mono);font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px;}
+.stat-value{font-family:var(--font-mono);font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;display:flex;align-items:baseline;gap:5px;}
+.stat-value .unit{font-size:12px;color:var(--muted);font-weight:500;}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:6px;}
+.dot.good{background:var(--good);}
+.content{padding:26px 26px 64px;max-width:1160px;}
+.page-head h1{font-size:20px;margin:0 0 4px;font-weight:700;}
+.page-sub{color:var(--muted);font-size:13px;margin:0 0 20px;}
+
+.split{display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start;}
+@media (max-width:860px){.split{grid-template-columns:1fr;}}
+
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px 22px;margin-bottom:16px;}
+.card-title{font-weight:600;font-size:14px;margin-bottom:14px;}
+
+.panel-mock{background:#05070a;border-radius:14px;padding:22px;border:6px solid #1a1d24;}
+.panel-mock svg{width:100%;display:block;}
+.panel-caption{text-align:center;font-family:var(--font-mono);font-size:11px;color:var(--muted);margin-top:12px;}
+.panel-caption b{color:var(--text);}
+
+.field{margin-bottom:16px;}
+.field:last-child{margin-bottom:0;}
+label{display:block;font-size:12.5px;font-weight:600;margin-bottom:7px;}
+.hintline{color:var(--muted);font-weight:400;font-size:11.5px;}
+input[type=range]{width:100%;accent-color:var(--accent);}
+.rangeval{font-family:var(--font-mono);font-size:12px;color:var(--muted);margin-top:4px;}
+.switch-row{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--border);}
+.switch-row:last-child{border-bottom:none;}
+.sw-label{font-size:13px;font-weight:500;}
+.sw-sub{font-size:11.5px;color:var(--muted);}
+.toggle{width:36px;height:20px;border-radius:10px;background:var(--good);position:relative;flex:none;cursor:pointer;}
+.toggle.off{background:var(--border);}
+.toggle i{position:absolute;top:2px;left:18px;width:16px;height:16px;border-radius:50%;background:#fff;}
+.toggle.off i{left:2px;}
+
+.screenlist{display:flex;flex-direction:column;gap:8px;margin-top:6px;}
+.screen-row{display:flex;align-items:center;gap:10px;background:var(--panel-2);border:1px solid var(--border);border-radius:9px;padding:9px 12px;}
+.grip{color:var(--muted);font-family:var(--font-mono);letter-spacing:2px;cursor:grab;}
+.screen-name{flex:1;font-size:13px;font-weight:500;}
+.screen-order{font-family:var(--font-mono);font-size:11px;color:var(--muted);background:var(--panel);border:1px solid var(--border);border-radius:5px;padding:2px 7px;transition:background-color .2s ease, color .2s ease;}
+
+.panel-frame{position:relative;}
+.panel-frame svg{position:relative;transition:opacity .35s ease;}
+.panel-frame svg.out{opacity:0;position:absolute;inset:0;}
+
+.toggle{transition:background-color .2s ease;}
+.toggle i{transition:left .2s cubic-bezier(.34,1.56,.64,1);}
+.screen-row{transition:transform .15s ease, box-shadow .15s ease, opacity .15s ease;}
+.screen-row.dragging{opacity:.5;}
+.screen-row.drag-over{box-shadow:0 0 0 2px var(--accent) inset;}
+.grip{transition:color .15s ease;}
+.screen-row:hover .grip{color:var(--accent);}
+
+@media (prefers-reduced-motion: no-preference){
+  .card{opacity:0;animation:fadeUp .5s cubic-bezier(.16,1,.3,1) forwards;}
+  .split > div:nth-child(1) .card{animation-delay:.05s}
+  .split > div:nth-child(2) .card:nth-of-type(1){animation-delay:.10s}
+  .split > div:nth-child(2) .card:nth-of-type(2){animation-delay:.16s}
+}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand"><div class="brand-mark">Ar</div><div><div class="brand-name">argonone</div><div class="brand-host">rpi01.lan</div></div></div>
+    <ul class="navlist">
+      <li><a href="03-dashboard.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="2" width="7" height="7" rx="1.5"/><rect x="11" y="2" width="7" height="7" rx="1.5"/><rect x="2" y="11" width="7" height="7" rx="1.5"/><rect x="11" y="11" width="7" height="7" rx="1.5"/></svg>Dashboard</a></li>
+      <li><a href="04-fan-curve-editor.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="1.5"/><path d="M10 10C10 4 15 3 16 7c.4 1.7-2 3-6 3"/><path d="M10 10C4 10 3 15 7 16c1.7.4 3-2 3-6"/><path d="M10 10C10 16 5 17 4 13c-.4-1.7 2-3 6-3"/><path d="M10 10c6 0 7-5 3-6-1.7-.4-3 2-3 6"/></svg>Fan control</a></li>
+      <li><a href="05-storage-raid.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><ellipse cx="10" cy="4.5" rx="7" ry="2.5"/><path d="M3 4.5v11c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-11"/><path d="M3 10c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/></svg>Storage &amp; RAID</a></li>
+      <li><a class="active" href="06-oled-display.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="4" width="16" height="10" rx="1.5"/><circle cx="10" cy="9" r="1.3"/><line x1="7" y1="17" x2="13" y2="17"/></svg>Display</a></li>
+      <li><a href="08-system-settings.html#power"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M11 2 4 12h5l-1 6 7-10h-5z"/></svg>Power &amp; RTC</a></li>
+      <div class="divider"></div>
+      <li><a href="07-users-rbac.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7.5" cy="6.5" r="3"/><path d="M2 17c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/><circle cx="15" cy="7.5" r="2.2"/><path d="M13.3 12.2c2.6.3 4.5 2.1 4.5 4.8"/></svg>Users</a></li>
+      <li><a href="08-system-settings.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="3"/><path d="M10 2v2.4M10 15.6V18M18 10h-2.4M4.4 10H2M15.6 4.4l-1.7 1.7M6.1 13.9l-1.7 1.7M15.6 15.6l-1.7-1.7M6.1 6.1 4.4 4.4"/></svg>System</a></li>
+    </ul>
+    <div class="sidebar-foot"><div class="avatar">JD</div><div><div class="user-name">John Doe</div><div class="user-role">Operator</div></div></div>
+  </aside>
+
+  <div class="main">
+    <div class="statusbar">
+      <div class="stat"><div class="stat-label">CPU temp</div><div class="stat-value"><span class="dot good"></span>46<span class="unit">°C</span></div></div>
+      <div class="stat"><div class="stat-label">Fan</div><div class="stat-value"><span class="dot good"></span>38<span class="unit">%</span></div></div>
+      <div class="stat"><div class="stat-label">RAM</div><div class="stat-value">3.8<span class="unit">/ 8 GB</span></div></div>
+      <div class="stat"><div class="stat-label">IP address</div><div class="stat-value">192.168.1.42</div></div>
+    </div>
+
+    <div class="content">
+      <div class="page-head">
+        <h1>Display (OLED)</h1>
+        <p class="page-sub">Argon EON's front panel — screen rotation, timing, and a live preview of what's on the physical display right now.</p>
+      </div>
+
+      <div class="split">
+        <div>
+          <div class="card">
+            <div class="card-title">Live preview</div>
+            <div class="panel-mock panel-frame" id="panelFrame">
+              <svg viewBox="0 0 128 64" data-screen="Clock">
+                <rect width="128" height="64" fill="#05070a"/>
+                <text x="8" y="26" fill="#8fd3ff" font-family="IBM Plex Mono, monospace" font-size="20" font-weight="600">14:32</text>
+                <text x="8" y="44" fill="#5a7a8c" font-family="IBM Plex Mono, monospace" font-size="9">MON JUL 12</text>
+              </svg>
+              <svg viewBox="0 0 128 64" class="out" data-screen="CPU usage">
+                <rect width="128" height="64" fill="#05070a"/>
+                <text x="6" y="24" fill="#8fd3ff" font-family="IBM Plex Mono, monospace" font-size="16" font-weight="600">CPU: 46%</text>
+                <text x="6" y="38" fill="#8fd3ff" font-family="IBM Plex Mono, monospace" font-size="16" font-weight="600">RAM: 47%</text>
+                <text x="6" y="52" fill="#8fd3ff" font-family="IBM Plex Mono, monospace" font-size="16" font-weight="600">SYS: 12%</text>
+                <rect x="6" y="56" width="70" height="3" fill="#233"/>
+                <rect x="6" y="56" width="30" height="3" fill="#8fd3ff"/>
+              </svg>
+              <svg viewBox="0 0 128 64" class="out" data-screen="IP address">
+                <rect width="128" height="64" fill="#05070a"/>
+                <text x="64" y="36" fill="#8fd3ff" font-family="IBM Plex Mono, monospace" font-size="13" font-weight="600" text-anchor="middle">192.168.1.42</text>
+              </svg>
+            </div>
+            <p class="panel-caption">Now showing <b id="nowScreen">Clock</b> · next in <span id="nowIn">6</span>s</p>
+          </div>
+        </div>
+
+        <div>
+          <div class="card">
+            <div class="card-title">Screen rotation</div>
+            <div class="screenlist" id="screenList">
+              <div class="screen-row" draggable="true"><span class="grip">⋮⋮</span><span class="screen-name">Clock</span><span class="screen-order">1</span><div class="toggle"><i></i></div></div>
+              <div class="screen-row" draggable="true"><span class="grip">⋮⋮</span><span class="screen-name">IP address</span><span class="screen-order">2</span><div class="toggle"><i></i></div></div>
+              <div class="screen-row" draggable="true"><span class="grip">⋮⋮</span><span class="screen-name">CPU usage</span><span class="screen-order">3</span><div class="toggle"><i></i></div></div>
+              <div class="screen-row" draggable="true"><span class="grip">⋮⋮</span><span class="screen-name">Storage</span><span class="screen-order">4</span><div class="toggle"><i></i></div></div>
+              <div class="screen-row" draggable="true"><span class="grip">⋮⋮</span><span class="screen-name">Temperature</span><span class="screen-order">5</span><div class="toggle"><i></i></div></div>
+              <div class="screen-row" draggable="true"><span class="grip">⋮⋮</span><span class="screen-name">RAID status</span><span class="screen-order">—</span><div class="toggle off"><i></i></div></div>
+              <div class="screen-row" draggable="true"><span class="grip">⋮⋮</span><span class="screen-name">Argon40 logo</span><span class="screen-order">—</span><div class="toggle off"><i></i></div></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Timing</div>
+            <div class="field">
+              <label>Switch duration <span class="hintline">— time on each screen before rotating</span></label>
+              <input type="range" min="0" max="60" value="10" id="durRange">
+              <div class="rangeval" id="durVal">10 seconds</div>
+            </div>
+            <div class="field">
+              <label>Screensaver timeout <span class="hintline">— blank the panel after inactivity</span></label>
+              <input type="range" min="0" max="600" value="120" id="saverRange">
+              <div class="rangeval" id="saverVal">2 minutes</div>
+            </div>
+            <div class="switch-row">
+              <div><div class="sw-label">Panel enabled</div><div class="sw-sub">Turn the OLED off entirely</div></div>
+              <div class="toggle"><i></i></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+// Live preview cycling — crossfades between the enabled screens, mirroring the OLED rotation
+const frames = [...document.querySelectorAll('#panelFrame svg')];
+const nowScreenEl = document.getElementById('nowScreen');
+const nowInEl = document.getElementById('nowIn');
+let frameIdx = 0, secondsLeft = 6;
+const DURATION = 6;
+function showFrame(i){
+  frames.forEach((f,j)=>f.classList.toggle('out', j!==i));
+  nowScreenEl.textContent = frames[i].getAttribute('data-screen');
+}
+setInterval(() => {
+  secondsLeft -= 1;
+  if(secondsLeft <= 0){
+    frameIdx = (frameIdx+1) % frames.length;
+    showFrame(frameIdx);
+    secondsLeft = DURATION;
+  }
+  nowInEl.textContent = secondsLeft;
+}, 1000);
+
+// Toggle switches
+document.querySelectorAll('.toggle').forEach(t => {
+  t.addEventListener('click', () => t.classList.toggle('off'));
+});
+
+// Range sliders with live labels
+function fmtSecs(s){ return s>=60 ? `${Math.round(s/60)} minute${s>=120?'s':''}` : `${s} seconds`; }
+const durRange = document.getElementById('durRange'), durVal = document.getElementById('durVal');
+durRange.addEventListener('input', () => durVal.textContent = durRange.value+' seconds');
+const saverRange = document.getElementById('saverRange'), saverVal = document.getElementById('saverVal');
+saverRange.addEventListener('input', () => saverVal.textContent = fmtSecs(+saverRange.value));
+
+// Drag-to-reorder screen list
+const list = document.getElementById('screenList');
+let dragEl = null;
+list.querySelectorAll('.screen-row').forEach(row => {
+  row.addEventListener('dragstart', () => { dragEl = row; row.classList.add('dragging'); });
+  row.addEventListener('dragend', () => { row.classList.remove('dragging'); renumber(); });
+  row.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    const after = getAfterElement(list, e.clientY);
+    if(after == null) list.appendChild(dragEl); else list.insertBefore(dragEl, after);
+  });
+});
+function getAfterElement(container, y){
+  const rows = [...container.querySelectorAll('.screen-row:not(.dragging)')];
+  return rows.reduce((closest, child) => {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height/2;
+    return (offset < 0 && offset > closest.offset) ? {offset, element: child} : closest;
+  }, {offset:-Infinity}).element;
+}
+function renumber(){
+  let n = 1;
+  list.querySelectorAll('.screen-row').forEach(row => {
+    const enabled = !row.querySelector('.toggle').classList.contains('off');
+    row.querySelector('.screen-order').textContent = enabled ? n++ : '—';
+  });
+}
+document.querySelectorAll('.toggle').forEach(t => t.addEventListener('click', renumber));
+</script>
+</body>
+</html>

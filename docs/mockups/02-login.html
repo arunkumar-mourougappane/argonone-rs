@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in — argonone</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+:root{
+  --bg:#F4F5F9; --panel:#FFFFFF; --border:#DFE1EA; --text:#1B1E27; --muted:#5B6172;
+  --accent:#6857E8; --accent-soft:#EDEAFB;
+  --good:#2E9C63; --good-soft:#E4F6EC; --warn:#B5791C; --warn-soft:#FBF0DC; --crit:#C43450; --crit-soft:#FBE4E9;
+  --shadow:0 1px 2px rgba(20,22,30,.06), 0 8px 24px rgba(20,22,30,.05);
+  --font-ui:'IBM Plex Sans',-apple-system,"Segoe UI",sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){ :root{ --bg:#0C0E13; --panel:#14171F; --border:#262B36; --text:#E7E9F0; --muted:#8A90A3;
+  --accent:#8B7FFF; --accent-soft:rgba(139,127,255,.14); --good:#4FBE86; --good-soft:rgba(79,190,134,.14);
+  --warn:#E3A83F; --warn-soft:rgba(227,168,63,.14); --crit:#E5677A; --crit-soft:rgba(229,103,122,.14);
+  --shadow:0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.4); } }
+:root[data-theme="dark"]{ --bg:#0C0E13; --panel:#14171F; --border:#262B36; --text:#E7E9F0; --muted:#8A90A3;
+  --accent:#8B7FFF; --accent-soft:rgba(139,127,255,.14); --good:#4FBE86; --good-soft:rgba(79,190,134,.14);
+  --warn:#E3A83F; --warn-soft:rgba(227,168,63,.14); --crit:#E5677A; --crit-soft:rgba(229,103,122,.14);
+  --shadow:0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.4); }
+:root[data-theme="light"]{ --bg:#F4F5F9; --panel:#FFFFFF; --border:#DFE1EA; --text:#1B1E27; --muted:#5B6172;
+  --accent:#6857E8; --accent-soft:#EDEAFB; --good:#2E9C63; --good-soft:#E4F6EC; --warn:#B5791C; --warn-soft:#FBF0DC;
+  --crit:#C43450; --crit-soft:#FBE4E9; --shadow:0 1px 2px rgba(20,22,30,.06), 0 8px 24px rgba(20,22,30,.05); }
+
+*{box-sizing:border-box;}
+body{margin:0;min-height:100vh;background:
+  radial-gradient(1200px 500px at 50% -10%, var(--accent-soft), transparent 60%), var(--bg);
+  color:var(--text);font-family:var(--font-ui);display:flex;align-items:center;justify-content:center;padding:32px;}
+.card{width:100%;max-width:400px;background:var(--panel);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:36px 32px 28px;}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:30px;justify-content:center;flex-direction:column;text-align:center;}
+.brand-mark{width:38px;height:38px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font-mono);font-weight:600;font-size:16px;}
+.brand-name{font-weight:600;font-size:16px;margin-top:10px;}
+.brand-sub{font-family:var(--font-mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-top:2px;}
+.field{margin-bottom:16px;}
+label{display:block;font-size:12.5px;font-weight:600;margin-bottom:6px;}
+input[type=text],input[type=password]{
+  width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);
+  background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13.5px;outline:none;}
+input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+.row{display:flex;align-items:center;justify-content:space-between;margin:4px 0 22px;}
+.remember{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);}
+.remember input{accent-color:var(--accent);}
+.btn{width:100%;padding:11px 14px;border-radius:8px;border:none;background:var(--accent);color:#fff;
+  font-family:var(--font-ui);font-weight:600;font-size:14px;cursor:pointer;}
+.btn:hover{filter:brightness(1.06);}
+.recover{margin-top:20px;text-align:center;font-size:12px;color:var(--muted);line-height:1.6;}
+.recover code{font-family:var(--font-mono);background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:1px 5px;}
+
+@media (prefers-reduced-motion: no-preference){
+  .card{animation:cardIn .5s cubic-bezier(.16,1,.3,1) both;}
+  .brand,.field,.row,.btn,.recover{opacity:0;animation:fadeUp .45s cubic-bezier(.16,1,.3,1) forwards;}
+  .brand{animation-delay:.06s} .field:nth-of-type(1){animation-delay:.12s} .field:nth-of-type(2){animation-delay:.16s}
+  .row{animation-delay:.2s} .btn{animation-delay:.24s} .recover{animation-delay:.3s}
+  input[type=text],input[type=password]{transition:border-color .15s ease, box-shadow .15s ease;}
+  .btn{transition:transform .1s ease, filter .15s ease;}
+  .btn:active{transform:scale(.98);}
+  .brand-mark{transition:transform .3s cubic-bezier(.34,1.56,.64,1);}
+  .brand:hover .brand-mark{transform:rotate(8deg);}
+}
+@keyframes cardIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">
+      <div class="brand-mark">Ar</div>
+      <div class="brand-name">argonone</div>
+      <div class="brand-sub">rpi01.lan · Argon EON</div>
+    </div>
+
+    <form id="loginForm">
+      <div class="field">
+        <label for="u">Username</label>
+        <input type="text" id="u" value="admin" autocomplete="username">
+      </div>
+      <div class="field">
+        <label for="p">Password</label>
+        <input type="password" id="p" placeholder="" autocomplete="current-password">
+      </div>
+      <div class="row">
+        <label class="remember"><input type="checkbox" checked> Keep me signed in</label>
+      </div>
+      <button type="submit" class="btn" id="signInBtn">Sign in</button>
+    </form>
+
+    <p class="recover">Forgot your password? Ask an administrator to reset it from Users — or, with shell access:<br><code>sudo -u argonone argonone-rs admin reset-password</code></p>
+  </div>
+<script>
+document.getElementById('loginForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('signInBtn');
+  btn.textContent = 'Signing in…';
+  btn.style.opacity = '.7';
+  setTimeout(() => { btn.textContent = '✓ Signed in'; btn.style.background = 'var(--good)'; }, 700);
+});
+</script>
+</body>
+</html>

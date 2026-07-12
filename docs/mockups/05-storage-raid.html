@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Storage & RAID — argonone</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+:root{
+  --bg:#F4F5F9; --panel:#FFFFFF; --panel-2:#F8F8FC; --border:#DFE1EA; --text:#1B1E27; --muted:#5B6172;
+  --accent:#6857E8; --accent-soft:#EDEAFB;
+  --good:#2E9C63; --good-soft:#E4F6EC; --warn:#B5791C; --warn-soft:#FBF0DC; --crit:#C43450; --crit-soft:#FBE4E9;
+  --shadow:0 1px 2px rgba(20,22,30,.06), 0 8px 24px rgba(20,22,30,.05);
+  --font-ui:'IBM Plex Sans',-apple-system,"Segoe UI",sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){ :root{ --bg:#0C0E13; --panel:#14171F; --panel-2:#181C25; --border:#262B36; --text:#E7E9F0; --muted:#8A90A3;
+  --accent:#8B7FFF; --accent-soft:rgba(139,127,255,.14); --good:#4FBE86; --good-soft:rgba(79,190,134,.14);
+  --warn:#E3A83F; --warn-soft:rgba(227,168,63,.14); --crit:#E5677A; --crit-soft:rgba(229,103,122,.14);
+  --shadow:0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.4); } }
+:root[data-theme="dark"]{ --bg:#0C0E13; --panel:#14171F; --panel-2:#181C25; --border:#262B36; --text:#E7E9F0; --muted:#8A90A3;
+  --accent:#8B7FFF; --accent-soft:rgba(139,127,255,.14); --good:#4FBE86; --good-soft:rgba(79,190,134,.14);
+  --warn:#E3A83F; --warn-soft:rgba(227,168,63,.14); --crit:#E5677A; --crit-soft:rgba(229,103,122,.14);
+  --shadow:0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.4); }
+:root[data-theme="light"]{ --bg:#F4F5F9; --panel:#FFFFFF; --panel-2:#F8F8FC; --border:#DFE1EA; --text:#1B1E27; --muted:#5B6172;
+  --accent:#6857E8; --accent-soft:#EDEAFB; --good:#2E9C63; --good-soft:#E4F6EC; --warn:#B5791C; --warn-soft:#FBF0DC;
+  --crit:#C43450; --crit-soft:#FBE4E9; --shadow:0 1px 2px rgba(20,22,30,.06), 0 8px 24px rgba(20,22,30,.05); }
+
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size:14px;}
+a{color:inherit;}
+.shell{display:flex;min-height:100vh;}
+.sidebar{width:216px;flex:none;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:18px 12px;position:sticky;top:0;height:100vh;}
+.brand{display:flex;align-items:center;gap:9px;padding:6px 8px 18px;border-bottom:1px solid var(--border);margin-bottom:10px;}
+.brand-mark{width:26px;height:26px;border-radius:7px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font-mono);font-weight:600;font-size:12px;flex:none;}
+.brand-name{font-weight:600;font-size:14px;}
+.brand-host{font-family:var(--font-mono);font-size:10.5px;color:var(--muted);}
+.navlist{list-style:none;padding:0;margin:6px 0 0;display:flex;flex-direction:column;gap:1px;}
+.navlist a{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;color:var(--muted);text-decoration:none;font-size:13px;font-weight:500;}
+.navlist a:hover{background:var(--panel-2);color:var(--text);}
+.navlist a.active{background:var(--accent-soft);color:var(--accent);}
+.navlist svg{width:16px;height:16px;flex:none;}
+.navlist .divider{height:1px;background:var(--border);margin:10px 4px;}
+.sidebar-foot{margin-top:auto;padding-top:12px;border-top:1px solid var(--border);display:flex;align-items:center;gap:9px;}
+.avatar{width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:11px;font-weight:600;flex:none;}
+.user-name{font-size:12.5px;font-weight:600;line-height:1.3;}
+.user-role{font-family:var(--font-mono);font-size:10px;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;}
+.main{flex:1;min-width:0;}
+.statusbar{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--border);background:var(--panel);}
+.stat{padding:13px 22px;border-right:1px solid var(--border);}
+.stat-label{font-family:var(--font-mono);font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px;}
+.stat-value{font-family:var(--font-mono);font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;display:flex;align-items:baseline;gap:5px;}
+.stat-value .unit{font-size:12px;color:var(--muted);font-weight:500;}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:6px;}
+.dot.good{background:var(--good);}
+.content{padding:26px 26px 64px;max-width:1160px;}
+.page-head h1{font-size:20px;margin:0 0 4px;font-weight:700;}
+.page-sub{color:var(--muted);font-size:13px;margin:0 0 20px;}
+
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px 22px;margin-bottom:16px;}
+.card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}
+.card-title{font-weight:600;font-size:14.5px;display:flex;align-items:center;gap:9px;}
+.badge{font-family:var(--font-mono);font-size:10.5px;padding:3px 9px;border-radius:20px;font-weight:600;}
+.badge.good{background:var(--good-soft);color:var(--good);}
+.badge.warn{background:var(--warn-soft);color:var(--warn);}
+.badge.crit{background:var(--crit-soft);color:var(--crit);}
+
+.raid-meta{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:18px;}
+.rm-item{background:var(--panel-2);border-radius:9px;padding:11px 12px;}
+.rm-label{font-family:var(--font-mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;}
+.rm-value{font-family:var(--font-mono);font-size:16px;font-weight:600;font-variant-numeric:tabular-nums;}
+.rm-value.good{color:var(--good);}
+
+.devgrid{display:flex;gap:8px;flex-wrap:wrap;}
+.devchip{font-family:var(--font-mono);font-size:11.5px;padding:6px 11px;border-radius:7px;background:var(--good-soft);color:var(--good);font-weight:600;}
+
+table.disks{width:100%;border-collapse:collapse;}
+table.disks th{text-align:left;font-family:var(--font-mono);font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600;padding:0 12px 10px;border-bottom:1px solid var(--border);}
+table.disks td{padding:12px;border-bottom:1px solid var(--border);vertical-align:middle;}
+table.disks tr:last-child td{border-bottom:none;}
+.dev-name{font-family:var(--font-mono);font-weight:600;}
+.dev-sub{font-family:var(--font-mono);font-size:11px;color:var(--muted);}
+.bar-cell{display:flex;align-items:center;gap:10px;min-width:180px;}
+.bar{flex:1;height:7px;border-radius:4px;background:var(--panel-2);overflow:hidden;}
+.bar i{display:block;height:100%;border-radius:4px;}
+.bar.good i{background:var(--good);} .bar.warn i{background:var(--warn);} .bar.crit i{background:var(--crit);}
+.bar-pct{font-family:var(--font-mono);font-size:12px;width:34px;text-align:right;font-variant-numeric:tabular-nums;}
+.temp{font-family:var(--font-mono);font-variant-numeric:tabular-nums;}
+.temp.good{color:var(--good);} .temp.warn{color:var(--warn);}
+
+table.disks tr{transition:background-color .15s ease;}
+table.disks tbody tr:hover{background:var(--panel-2);}
+.devchip{transition:transform .15s ease, box-shadow .15s ease;}
+.devchip:hover{transform:translateY(-1px);}
+
+@media (prefers-reduced-motion: no-preference){
+  .bar i{transition:width .9s cubic-bezier(.16,1,.3,1);}
+  .card{opacity:0;animation:fadeUp .5s cubic-bezier(.16,1,.3,1) forwards;}
+  .card:nth-of-type(1){animation-delay:.05s} .card:nth-of-type(2){animation-delay:.12s}
+  .rm-item{transition:transform .15s ease;} .rm-item:hover{transform:translateY(-2px);}
+}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand"><div class="brand-mark">Ar</div><div><div class="brand-name">argonone</div><div class="brand-host">rpi01.lan</div></div></div>
+    <ul class="navlist">
+      <li><a href="03-dashboard.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="2" width="7" height="7" rx="1.5"/><rect x="11" y="2" width="7" height="7" rx="1.5"/><rect x="2" y="11" width="7" height="7" rx="1.5"/><rect x="11" y="11" width="7" height="7" rx="1.5"/></svg>Dashboard</a></li>
+      <li><a href="04-fan-curve-editor.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="1.5"/><path d="M10 10C10 4 15 3 16 7c.4 1.7-2 3-6 3"/><path d="M10 10C4 10 3 15 7 16c1.7.4 3-2 3-6"/><path d="M10 10C10 16 5 17 4 13c-.4-1.7 2-3 6-3"/><path d="M10 10c6 0 7-5 3-6-1.7-.4-3 2-3 6"/></svg>Fan control</a></li>
+      <li><a class="active" href="05-storage-raid.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><ellipse cx="10" cy="4.5" rx="7" ry="2.5"/><path d="M3 4.5v11c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-11"/><path d="M3 10c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/></svg>Storage &amp; RAID</a></li>
+      <li><a href="06-oled-display.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="4" width="16" height="10" rx="1.5"/><circle cx="10" cy="9" r="1.3"/><line x1="7" y1="17" x2="13" y2="17"/></svg>Display</a></li>
+      <li><a href="08-system-settings.html#power"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M11 2 4 12h5l-1 6 7-10h-5z"/></svg>Power &amp; RTC</a></li>
+      <div class="divider"></div>
+      <li><a href="07-users-rbac.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7.5" cy="6.5" r="3"/><path d="M2 17c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/><circle cx="15" cy="7.5" r="2.2"/><path d="M13.3 12.2c2.6.3 4.5 2.1 4.5 4.8"/></svg>Users</a></li>
+      <li><a href="08-system-settings.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="3"/><path d="M10 2v2.4M10 15.6V18M18 10h-2.4M4.4 10H2M15.6 4.4l-1.7 1.7M6.1 13.9l-1.7 1.7M15.6 15.6l-1.7-1.7M6.1 6.1 4.4 4.4"/></svg>System</a></li>
+    </ul>
+    <div class="sidebar-foot"><div class="avatar">JD</div><div><div class="user-name">John Doe</div><div class="user-role">Operator</div></div></div>
+  </aside>
+
+  <div class="main">
+    <div class="statusbar">
+      <div class="stat"><div class="stat-label">CPU temp</div><div class="stat-value"><span class="dot good"></span>46<span class="unit">°C</span></div></div>
+      <div class="stat"><div class="stat-label">Fan</div><div class="stat-value"><span class="dot good"></span>38<span class="unit">%</span></div></div>
+      <div class="stat"><div class="stat-label">RAM</div><div class="stat-value">3.8<span class="unit">/ 8 GB</span></div></div>
+      <div class="stat"><div class="stat-label">IP address</div><div class="stat-value">192.168.1.42</div></div>
+    </div>
+
+    <div class="content">
+      <div class="page-head">
+        <h1>Storage &amp; RAID</h1>
+        <p class="page-sub">Per-disk usage and temperature, plus array health when a RAID set is present.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">md0 · RAID1</div>
+          <span class="badge good">Clean</span>
+        </div>
+        <div class="raid-meta">
+          <div class="rm-item"><div class="rm-label">Size</div><div class="rm-value">3.6 TB</div></div>
+          <div class="rm-item"><div class="rm-label">Active</div><div class="rm-value good">2 / 2</div></div>
+          <div class="rm-item"><div class="rm-label">Working</div><div class="rm-value good">2 / 2</div></div>
+          <div class="rm-item"><div class="rm-label">Failed</div><div class="rm-value good">0</div></div>
+          <div class="rm-item"><div class="rm-label">Spare</div><div class="rm-value">0</div></div>
+        </div>
+        <div class="devgrid">
+          <span class="devchip">sda — active sync</span>
+          <span class="devchip">sdb — active sync</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div class="card-title">Disks</div></div>
+        <table class="disks">
+          <thead><tr><th>Device</th><th>Usage</th><th>Temp</th><th>Role</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><div class="dev-name">sda</div><div class="dev-sub">4 TB · Seagate IronWolf</div></td>
+              <td><div class="bar-cell"><div class="bar good"><i style="width:41%"></i></div><span class="bar-pct">41%</span></div></td>
+              <td><span class="temp good">33°C</span></td>
+              <td><span class="badge good">RAID member</span></td>
+            </tr>
+            <tr>
+              <td><div class="dev-name">sdb</div><div class="dev-sub">4 TB · Seagate IronWolf</div></td>
+              <td><div class="bar-cell"><div class="bar good"><i style="width:41%"></i></div><span class="bar-pct">41%</span></div></td>
+              <td><span class="temp good">34°C</span></td>
+              <td><span class="badge good">RAID member</span></td>
+            </tr>
+            <tr>
+              <td><div class="dev-name">mmcblk0</div><div class="dev-sub">64 GB · boot / root</div></td>
+              <td><div class="bar-cell"><div class="bar warn"><i style="width:78%"></i></div><span class="bar-pct">78%</span></div></td>
+              <td><span class="temp">—</span></td>
+              <td><span class="badge warn">78% full</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+document.querySelectorAll('.bar i').forEach(bar => {
+  const target = bar.style.width;
+  bar.style.width = '0%';
+  requestAnimationFrame(() => requestAnimationFrame(() => { bar.style.width = target; }));
+});
+</script>
+</body>
+</html>

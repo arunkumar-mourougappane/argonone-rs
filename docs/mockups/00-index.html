@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>argonone-rs — UI mockups</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root{
+  --bg:#F4F5F9; --panel:#FFFFFF; --border:#DFE1EA; --text:#1B1E27; --muted:#5B6172;
+  --accent:#6857E8; --accent-soft:#EDEAFB;
+  --good:#2E9C63; --good-soft:#E4F6EC; --warn:#B5791C; --warn-soft:#FBF0DC; --crit:#C43450; --crit-soft:#FBE4E9;
+  --shadow:0 1px 2px rgba(20,22,30,.06), 0 8px 24px rgba(20,22,30,.05);
+  --font-ui:'IBM Plex Sans',-apple-system,"Segoe UI",sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#0C0E13; --panel:#14171F; --border:#262B36; --text:#E7E9F0; --muted:#8A90A3;
+    --accent:#8B7FFF; --accent-soft:rgba(139,127,255,.14);
+    --good:#4FBE86; --good-soft:rgba(79,190,134,.14); --warn:#E3A83F; --warn-soft:rgba(227,168,63,.14);
+    --crit:#E5677A; --crit-soft:rgba(229,103,122,.14); --shadow:0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.4); }
+}
+:root[data-theme="dark"]{ --bg:#0C0E13; --panel:#14171F; --border:#262B36; --text:#E7E9F0; --muted:#8A90A3;
+  --accent:#8B7FFF; --accent-soft:rgba(139,127,255,.14);
+  --good:#4FBE86; --good-soft:rgba(79,190,134,.14); --warn:#E3A83F; --warn-soft:rgba(227,168,63,.14);
+  --crit:#E5677A; --crit-soft:rgba(229,103,122,.14); --shadow:0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.4); }
+:root[data-theme="light"]{ --bg:#F4F5F9; --panel:#FFFFFF; --border:#DFE1EA; --text:#1B1E27; --muted:#5B6172;
+  --accent:#6857E8; --accent-soft:#EDEAFB;
+  --good:#2E9C63; --good-soft:#E4F6EC; --warn:#B5791C; --warn-soft:#FBF0DC; --crit:#C43450; --crit-soft:#FBE4E9;
+  --shadow:0 1px 2px rgba(20,22,30,.06), 0 8px 24px rgba(20,22,30,.05); }
+
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-ui);}
+.wrap{max-width:920px;margin:0 auto;padding:64px 24px 96px;}
+.eyebrow{font-family:var(--font-mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin:0 0 10px;}
+h1{font-size:34px;font-weight:700;letter-spacing:-.01em;margin:0 0 10px;text-wrap:balance;}
+.lede{color:var(--muted);font-size:16px;line-height:1.6;max-width:62ch;margin:0 0 40px;}
+.flow{list-style:none;margin:0 0 56px;padding:0;display:flex;flex-direction:column;gap:0;border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--panel);}
+.flow li{display:grid;grid-template-columns:56px 1fr auto;align-items:center;gap:16px;padding:18px 20px;border-bottom:1px solid var(--border);text-decoration:none;color:inherit;}
+.flow li:last-child{border-bottom:none;}
+.flow a{display:grid;grid-template-columns:56px 1fr auto;align-items:center;gap:16px;padding:18px 20px;text-decoration:none;color:inherit;}
+.flow a:hover{background:var(--accent-soft);}
+.num{font-family:var(--font-mono);font-size:13px;color:var(--accent);background:var(--accent-soft);width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:600;}
+.flow-title{font-weight:600;font-size:15px;}
+.flow-desc{color:var(--muted);font-size:13px;margin-top:2px;}
+.flow-tag{font-family:var(--font-mono);font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:3px 8px;white-space:nowrap;}
+.section-label{font-family:var(--font-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 14px;}
+.tokens{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:48px;}
+.token{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--panel);}
+.swatch{height:52px;}
+.token-meta{padding:9px 11px;font-family:var(--font-mono);font-size:11px;color:var(--muted);}
+.token-meta b{display:block;color:var(--text);font-size:12px;font-weight:600;margin-bottom:2px;}
+footer{color:var(--muted);font-size:13px;border-top:1px solid var(--border);padding-top:20px;}
+
+@media (prefers-reduced-motion: no-preference){
+  .flow a{transition:background-color .15s ease, padding-left .18s cubic-bezier(.2,.8,.2,1);}
+  .flow a:hover{padding-left:26px;}
+  .num{transition:transform .18s cubic-bezier(.34,1.56,.64,1), background-color .15s ease, color .15s ease;}
+  .flow a:hover .num{transform:scale(1.08);background:var(--accent);color:#fff;}
+  .token{transition:transform .15s ease, box-shadow .15s ease;}
+  .token:hover{transform:translateY(-3px);box-shadow:var(--shadow);}
+  h1,.lede,.section-label,.flow,.tokens,footer{animation:fadeUp .5s cubic-bezier(.16,1,.3,1) both;}
+  .lede{animation-delay:.04s} .flow{animation-delay:.08s} .tokens{animation-delay:.14s} footer{animation-delay:.18s}
+  .flow li{opacity:0;animation:fadeUp .45s cubic-bezier(.16,1,.3,1) forwards;}
+  .flow li:nth-child(1){animation-delay:.12s} .flow li:nth-child(2){animation-delay:.16s}
+  .flow li:nth-child(3){animation-delay:.20s} .flow li:nth-child(4){animation-delay:.24s}
+  .flow li:nth-child(5){animation-delay:.28s} .flow li:nth-child(6){animation-delay:.32s}
+  .flow li:nth-child(7){animation-delay:.36s} .flow li:nth-child(8){animation-delay:.40s}
+}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">argonone-rs · UI mockups</p>
+  <h1>Argon40 case monitor — web UI</h1>
+  <p class="lede">Static mockups for the Rust daemon's web UI, covering the forced first-run
+  setup through day-to-day fan/storage/display control. Each page is a standalone,
+  self-contained HTML file — open any of them directly in a browser.</p>
+
+  <p class="section-label">Screen flow</p>
+  <ul class="flow">
+    <li><a href="01-setup-wizard.html">
+      <span class="num">1</span>
+      <span><span class="flow-title">First-run setup</span><div class="flow-desc">Forced admin account creation — only reachable route until it's done.</div></span>
+      <span class="flow-tag">unauthenticated</span>
+    </a></li>
+    <li><a href="02-login.html">
+      <span class="num">2</span>
+      <span><span class="flow-title">Sign in</span><div class="flow-desc">Username + password — forgot it? Ask an admin, no email recovery.</div></span>
+      <span class="flow-tag">unauthenticated</span>
+    </a></li>
+    <li><a href="03-dashboard.html">
+      <span class="num">3</span>
+      <span><span class="flow-title">Dashboard</span><div class="flow-desc">Status strip + fan, network, storage, display, power and system summary cards.</div></span>
+      <span class="flow-tag">all roles</span>
+    </a></li>
+    <li><a href="04-fan-curve-editor.html">
+      <span class="num">4</span>
+      <span><span class="flow-title">Fan control</span><div class="flow-desc">Draggable temp→speed curve editor for CPU and HDD.</div></span>
+      <span class="flow-tag">operator+</span>
+    </a></li>
+    <li><a href="05-storage-raid.html">
+      <span class="num">5</span>
+      <span><span class="flow-title">Storage &amp; RAID</span><div class="flow-desc">Per-disk usage/temperature, array health.</div></span>
+      <span class="flow-tag">viewer+</span>
+    </a></li>
+    <li><a href="06-oled-display.html">
+      <span class="num">6</span>
+      <span><span class="flow-title">Display (OLED)</span><div class="flow-desc">Live panel preview, screen rotation, screensaver timing.</div></span>
+      <span class="flow-tag">operator+ · EON</span>
+    </a></li>
+    <li><a href="07-users-rbac.html">
+      <span class="num">7</span>
+      <span><span class="flow-title">Users</span><div class="flow-desc">Admin/operator/viewer roles, invite flow, password resets.</div></span>
+      <span class="flow-tag">admin only</span>
+    </a></li>
+    <li><a href="08-system-settings.html">
+      <span class="num">8</span>
+      <span><span class="flow-title">System</span><div class="flow-desc">Units, RTC schedule, IR learning, firmware, danger zone.</div></span>
+      <span class="flow-tag">operator+</span>
+    </a></li>
+  </ul>
+
+  <p class="section-label">Design tokens</p>
+  <div class="tokens">
+    <div class="token"><div class="swatch" style="background:var(--bg)"></div><div class="token-meta"><b>Background</b>--bg</div></div>
+    <div class="token"><div class="swatch" style="background:var(--panel)"></div><div class="token-meta"><b>Panel</b>--panel</div></div>
+    <div class="token"><div class="swatch" style="background:var(--accent)"></div><div class="token-meta"><b>Accent</b>argon glow</div></div>
+    <div class="token"><div class="swatch" style="background:var(--good)"></div><div class="token-meta"><b>Good</b>nominal</div></div>
+    <div class="token"><div class="swatch" style="background:var(--warn)"></div><div class="token-meta"><b>Warning</b>threshold</div></div>
+    <div class="token"><div class="swatch" style="background:var(--crit)"></div><div class="token-meta"><b>Critical</b>fault/failed</div></div>
+  </div>
+
+  <footer>Type: IBM Plex Sans (UI/body) + IBM Plex Mono (stats, IDs, tabular data) — chosen for its engineering/technical-documentation lineage. Dark-first, light theme included. Accent is drawn from the pale violet-blue glow of an argon discharge tube.</footer>
+</div>
+</body>
+</html>

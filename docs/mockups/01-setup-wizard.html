@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set up admin account — argonone</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+:root{
+  --bg:#F4F5F9; --panel:#FFFFFF; --border:#DFE1EA; --text:#1B1E27; --muted:#5B6172;
+  --accent:#6857E8; --accent-soft:#EDEAFB;
+  --good:#2E9C63; --good-soft:#E4F6EC; --warn:#B5791C; --warn-soft:#FBF0DC; --crit:#C43450; --crit-soft:#FBE4E9;
+  --shadow:0 1px 2px rgba(20,22,30,.06), 0 8px 24px rgba(20,22,30,.05);
+  --font-ui:'IBM Plex Sans',-apple-system,"Segoe UI",sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){ :root{ --bg:#0C0E13; --panel:#14171F; --border:#262B36; --text:#E7E9F0; --muted:#8A90A3;
+  --accent:#8B7FFF; --accent-soft:rgba(139,127,255,.14); --good:#4FBE86; --good-soft:rgba(79,190,134,.14);
+  --warn:#E3A83F; --warn-soft:rgba(227,168,63,.14); --crit:#E5677A; --crit-soft:rgba(229,103,122,.14);
+  --shadow:0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.4); } }
+:root[data-theme="dark"]{ --bg:#0C0E13; --panel:#14171F; --border:#262B36; --text:#E7E9F0; --muted:#8A90A3;
+  --accent:#8B7FFF; --accent-soft:rgba(139,127,255,.14); --good:#4FBE86; --good-soft:rgba(79,190,134,.14);
+  --warn:#E3A83F; --warn-soft:rgba(227,168,63,.14); --crit:#E5677A; --crit-soft:rgba(229,103,122,.14);
+  --shadow:0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.4); }
+:root[data-theme="light"]{ --bg:#F4F5F9; --panel:#FFFFFF; --border:#DFE1EA; --text:#1B1E27; --muted:#5B6172;
+  --accent:#6857E8; --accent-soft:#EDEAFB; --good:#2E9C63; --good-soft:#E4F6EC; --warn:#B5791C; --warn-soft:#FBF0DC;
+  --crit:#C43450; --crit-soft:#FBE4E9; --shadow:0 1px 2px rgba(20,22,30,.06), 0 8px 24px rgba(20,22,30,.05); }
+
+*{box-sizing:border-box;}
+body{margin:0;min-height:100vh;background:
+  radial-gradient(1200px 500px at 50% -10%, var(--accent-soft), transparent 60%), var(--bg);
+  color:var(--text);font-family:var(--font-ui);display:flex;align-items:center;justify-content:center;padding:32px;}
+.card{width:100%;max-width:440px;background:var(--panel);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:36px 32px 28px;}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:28px;}
+.brand-mark{width:30px;height:30px;border-radius:8px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font-mono);font-weight:600;font-size:14px;flex:none;}
+.brand-name{font-weight:600;font-size:15px;letter-spacing:.01em;}
+.brand-sub{font-family:var(--font-mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;}
+.step{font-family:var(--font-mono);font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:.1em;margin:0 0 8px;}
+h1{font-size:21px;margin:0 0 8px;font-weight:700;text-wrap:balance;}
+.lede{color:var(--muted);font-size:13.5px;line-height:1.55;margin:0 0 26px;}
+.field{margin-bottom:16px;}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;}
+.field-row .field{margin-bottom:0;}
+label{display:block;font-size:12.5px;font-weight:600;margin-bottom:6px;}
+input[type=text],input[type=password]{
+  width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);
+  background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13.5px;outline:none;}
+input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+.strength{display:flex;gap:4px;margin-top:8px;}
+.strength i{flex:1;height:4px;border-radius:2px;background:var(--border);}
+.strength i.on{background:var(--good);}
+.strength-label{font-family:var(--font-mono);font-size:11px;color:var(--good);margin-top:6px;}
+.btn{width:100%;padding:11px 14px;border-radius:8px;border:none;background:var(--accent);color:#fff;
+  font-family:var(--font-ui);font-weight:600;font-size:14px;cursor:pointer;margin-top:6px;}
+.btn:hover{filter:brightness(1.06);}
+.note{display:flex;gap:10px;background:var(--accent-soft);border-radius:10px;padding:12px 14px;margin-top:22px;}
+.note svg{flex:none;color:var(--accent);margin-top:1px;}
+.note p{margin:0;font-size:12.5px;line-height:1.55;color:var(--text);}
+.note b{font-weight:600;}
+
+@media (prefers-reduced-motion: no-preference){
+  .card{animation:cardIn .5s cubic-bezier(.16,1,.3,1) both;}
+  .brand,.step,h1,.lede,.field-row,.field,.note{opacity:0;animation:fadeUp .45s cubic-bezier(.16,1,.3,1) forwards;}
+  .brand{animation-delay:.08s} .step{animation-delay:.13s} h1{animation-delay:.16s} .lede{animation-delay:.19s}
+  .field-row{animation-delay:.23s}
+  form > .field:nth-of-type(1){animation-delay:.27s} form > .field:nth-of-type(2){animation-delay:.31s}
+  form > .field:nth-of-type(3){animation-delay:.35s}
+  .note{animation-delay:.42s}
+  input[type=text],input[type=password]{transition:border-color .15s ease, box-shadow .15s ease;}
+  .btn{transition:transform .1s ease, filter .15s ease;}
+  .btn:active{transform:scale(.98);}
+  .strength i{transition:background-color .35s ease .1s;}
+  .brand-mark{transition:transform .2s cubic-bezier(.34,1.56,.64,1);}
+  .brand:hover .brand-mark{transform:rotate(-6deg) scale(1.06);}
+}
+@keyframes cardIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">
+      <div class="brand-mark">Ar</div>
+      <div><div class="brand-name">argonone</div><div class="brand-sub">Case controller</div></div>
+    </div>
+    <p class="step">First-run setup</p>
+    <h1>Create the admin account</h1>
+    <p class="lede">No accounts exist yet. This device is only reachable through this setup screen until an administrator account is created.</p>
+
+    <form>
+      <div class="field-row">
+        <div class="field">
+          <label for="fn">First name</label>
+          <input type="text" id="fn" placeholder="Aria" autocomplete="given-name">
+        </div>
+        <div class="field">
+          <label for="ln">Last name</label>
+          <input type="text" id="ln" placeholder="Reyes" autocomplete="family-name">
+        </div>
+      </div>
+      <div class="field">
+        <label for="u">Username</label>
+        <input type="text" id="u" value="admin" autocomplete="username">
+      </div>
+      <div class="field">
+        <label for="p">Password</label>
+        <input type="password" id="p" value="••••••••••••" autocomplete="new-password">
+        <div class="strength"><i class="on"></i><i class="on"></i><i class="on"></i><i></i></div>
+        <div class="strength-label">Strong</div>
+      </div>
+      <div class="field">
+        <label for="p2">Confirm password</label>
+        <input type="password" id="p2" value="••••••••••••" autocomplete="new-password">
+      </div>
+      <button type="submit" class="btn" id="submitBtn">Create admin account</button>
+    </form>
+
+    <div class="note">
+      <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.5v.01"/></svg>
+      <p><b>This account gets full access</b> — hardware control and user management. You can invite operator or viewer accounts with narrower access afterward from Users, and reset any of their passwords from there too. If this admin password is lost and no other admin can sign in, recovery requires shell access to the Pi (<code style="font-family:var(--font-mono)">argonone-rs admin reset-password</code>) — there's no email recovery on a device like this.</p>
+    </div>
+  </div>
+<script>
+// Password strength meter reacts to typing (mockup: length-based heuristic)
+const pw = document.getElementById('p');
+const bars = document.querySelectorAll('.strength i');
+const label = document.querySelector('.strength-label');
+const colors = [
+  {min:0,  text:'Too short', color:'var(--crit)', on:1},
+  {min:6,  text:'Weak',      color:'var(--warn)', on:2},
+  {min:10, text:'Good',      color:'var(--good)', on:3},
+  {min:14, text:'Strong',    color:'var(--good)', on:4},
+];
+function scoreFor(len){ let s = colors[0]; for(const c of colors){ if(len>=c.min) s=c; } return s; }
+pw.addEventListener('input', () => {
+  const s = scoreFor(pw.value.length);
+  bars.forEach((b,i) => { b.style.background = i < s.on ? s.color : ''; b.classList.toggle('on', i < s.on); });
+  label.textContent = s.text;
+  label.style.color = s.color;
+});
+// "Create admin account" -> brief loading state, then success (mockup only)
+document.querySelector('form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('submitBtn');
+  btn.textContent = 'Creating account…';
+  btn.style.opacity = '.7';
+  setTimeout(() => { btn.textContent = '✓ Account created — redirecting…'; btn.style.background = 'var(--good)'; }, 900);
+});
+</script>
+</body>
+</html>

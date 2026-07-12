@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>System — argonone</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+:root{
+  --bg:#F4F5F9; --panel:#FFFFFF; --panel-2:#F8F8FC; --border:#DFE1EA; --text:#1B1E27; --muted:#5B6172;
+  --accent:#6857E8; --accent-soft:#EDEAFB;
+  --good:#2E9C63; --good-soft:#E4F6EC; --warn:#B5791C; --warn-soft:#FBF0DC; --crit:#C43450; --crit-soft:#FBE4E9;
+  --shadow:0 1px 2px rgba(20,22,30,.06), 0 8px 24px rgba(20,22,30,.05);
+  --font-ui:'IBM Plex Sans',-apple-system,"Segoe UI",sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){ :root{ --bg:#0C0E13; --panel:#14171F; --panel-2:#181C25; --border:#262B36; --text:#E7E9F0; --muted:#8A90A3;
+  --accent:#8B7FFF; --accent-soft:rgba(139,127,255,.14); --good:#4FBE86; --good-soft:rgba(79,190,134,.14);
+  --warn:#E3A83F; --warn-soft:rgba(227,168,63,.14); --crit:#E5677A; --crit-soft:rgba(229,103,122,.14);
+  --shadow:0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.4); } }
+:root[data-theme="dark"]{ --bg:#0C0E13; --panel:#14171F; --panel-2:#181C25; --border:#262B36; --text:#E7E9F0; --muted:#8A90A3;
+  --accent:#8B7FFF; --accent-soft:rgba(139,127,255,.14); --good:#4FBE86; --good-soft:rgba(79,190,134,.14);
+  --warn:#E3A83F; --warn-soft:rgba(227,168,63,.14); --crit:#E5677A; --crit-soft:rgba(229,103,122,.14);
+  --shadow:0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.4); }
+:root[data-theme="light"]{ --bg:#F4F5F9; --panel:#FFFFFF; --panel-2:#F8F8FC; --border:#DFE1EA; --text:#1B1E27; --muted:#5B6172;
+  --accent:#6857E8; --accent-soft:#EDEAFB; --good:#2E9C63; --good-soft:#E4F6EC; --warn:#B5791C; --warn-soft:#FBF0DC;
+  --crit:#C43450; --crit-soft:#FBE4E9; --shadow:0 1px 2px rgba(20,22,30,.06), 0 8px 24px rgba(20,22,30,.05); }
+
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size:14px;}
+a{color:inherit;}
+.shell{display:flex;min-height:100vh;}
+.sidebar{width:216px;flex:none;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:18px 12px;position:sticky;top:0;height:100vh;}
+.brand{display:flex;align-items:center;gap:9px;padding:6px 8px 18px;border-bottom:1px solid var(--border);margin-bottom:10px;}
+.brand-mark{width:26px;height:26px;border-radius:7px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font-mono);font-weight:600;font-size:12px;flex:none;}
+.brand-name{font-weight:600;font-size:14px;}
+.brand-host{font-family:var(--font-mono);font-size:10.5px;color:var(--muted);}
+.navlist{list-style:none;padding:0;margin:6px 0 0;display:flex;flex-direction:column;gap:1px;}
+.navlist a{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;color:var(--muted);text-decoration:none;font-size:13px;font-weight:500;}
+.navlist a:hover{background:var(--panel-2);color:var(--text);}
+.navlist a.active{background:var(--accent-soft);color:var(--accent);}
+.navlist svg{width:16px;height:16px;flex:none;}
+.navlist .divider{height:1px;background:var(--border);margin:10px 4px;}
+.sidebar-foot{margin-top:auto;padding-top:12px;border-top:1px solid var(--border);display:flex;align-items:center;gap:9px;}
+.avatar{width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:11px;font-weight:600;flex:none;}
+.user-name{font-size:12.5px;font-weight:600;line-height:1.3;}
+.user-role{font-family:var(--font-mono);font-size:10px;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;}
+.main{flex:1;min-width:0;}
+.statusbar{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--border);background:var(--panel);}
+.stat{padding:13px 22px;border-right:1px solid var(--border);}
+.stat-label{font-family:var(--font-mono);font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px;}
+.stat-value{font-family:var(--font-mono);font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;display:flex;align-items:baseline;gap:5px;}
+.stat-value .unit{font-size:12px;color:var(--muted);font-weight:500;}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:6px;}
+.dot.good{background:var(--good);}
+.content{padding:26px 26px 64px;max-width:980px;}
+.page-head h1{font-size:20px;margin:0 0 4px;font-weight:700;}
+.page-sub{color:var(--muted);font-size:13px;margin:0 0 22px;}
+
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px 22px;margin-bottom:16px;}
+.card.danger{border-color:color-mix(in srgb, var(--crit) 40%, var(--border));}
+.card-title{font-weight:600;font-size:14px;margin-bottom:4px;display:flex;align-items:center;gap:8px;}
+.card-sub{color:var(--muted);font-size:12.5px;margin:0 0 16px;}
+
+.seg{display:inline-flex;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:3px;}
+.seg button{border:none;background:none;font-family:var(--font-ui);font-size:12.5px;font-weight:600;padding:6px 14px;border-radius:6px;color:var(--muted);cursor:pointer;}
+.seg button.active{background:var(--panel);color:var(--text);box-shadow:var(--shadow);}
+
+.row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border);}
+.row:last-child{border-bottom:none;}
+.row-label{font-size:13px;font-weight:500;}
+.row-sub{font-size:11.5px;color:var(--muted);}
+
+table.sched{width:100%;border-collapse:collapse;margin-top:6px;}
+table.sched th{text-align:left;font-family:var(--font-mono);font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600;padding:0 10px 8px;border-bottom:1px solid var(--border);}
+table.sched td{padding:10px;border-bottom:1px solid var(--border);font-size:13px;}
+table.sched tr:last-child td{border-bottom:none;}
+.badge{font-family:var(--font-mono);font-size:10.5px;padding:3px 9px;border-radius:20px;font-weight:600;}
+.badge.wake{background:var(--good-soft);color:var(--good);}
+.badge.sleep{background:var(--accent-soft);color:var(--accent);}
+.addbtn{margin-top:10px;background:none;border:1px dashed var(--border);color:var(--accent);font-family:var(--font-ui);font-weight:600;font-size:12.5px;padding:7px 13px;border-radius:8px;cursor:pointer;}
+
+.btn{padding:9px 16px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-family:var(--font-ui);font-weight:600;font-size:13px;cursor:pointer;}
+.btn.ghost{background:none;border:1px solid var(--border);color:var(--text);}
+.btn.danger{background:var(--crit);}
+
+.kv{width:100%;border-collapse:collapse;}
+.kv td{padding:8px 0;font-size:13px;border-top:1px solid var(--border);}
+.kv tr:first-child td{border-top:none;}
+.kv td:first-child{color:var(--muted);width:180px;}
+.kv td:last-child{font-family:var(--font-mono);font-variant-numeric:tabular-nums;}
+
+.danger-row{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--border);}
+.danger-row:last-child{border-bottom:none;}
+
+.toast{position:fixed;bottom:22px;right:22px;background:var(--panel);border:1px solid var(--border);border-radius:10px;
+  box-shadow:var(--shadow);padding:11px 16px;font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:8px;
+  transform:translateY(12px);opacity:0;pointer-events:none;transition:transform .25s cubic-bezier(.16,1,.3,1), opacity .25s ease;z-index:20;}
+.toast.show{transform:translateY(0);opacity:1;}
+.toast-dot{width:7px;height:7px;border-radius:50%;background:var(--good);flex:none;}
+
+.seg{position:relative;}
+.seg-indicator{position:absolute;top:3px;left:3px;height:calc(100% - 6px);border-radius:6px;background:var(--panel);box-shadow:var(--shadow);
+  transition:transform .25s cubic-bezier(.34,1.56,.64,1), width .25s ease;z-index:0;}
+.seg button{position:relative;z-index:1;transition:color .15s ease;}
+table.sched tr{transition:background-color .15s ease;}
+table.sched tbody tr:hover{background:var(--panel-2);}
+.addbtn{transition:background-color .15s ease, border-color .15s ease;}
+.addbtn:hover{background:var(--accent-soft);border-color:var(--accent);}
+.btn{transition:transform .1s ease, filter .15s ease, background-color .2s ease;}
+.btn:active{transform:scale(.97);}
+tr.new-row{animation:rowIn .4s cubic-bezier(.16,1,.3,1) both;}
+.row-learning{animation:pulseText 1.2s ease-in-out infinite;}
+
+@media (prefers-reduced-motion: no-preference){
+  .card{opacity:0;animation:fadeUp .5s cubic-bezier(.16,1,.3,1) forwards;}
+  .card:nth-of-type(1){animation-delay:.04s} .card:nth-of-type(2){animation-delay:.08s}
+  .card:nth-of-type(3){animation-delay:.12s} .card:nth-of-type(4){animation-delay:.16s} .card:nth-of-type(5){animation-delay:.2s}
+}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes rowIn{from{opacity:0;background:var(--accent-soft);transform:translateY(-4px)}to{opacity:1;transform:none}}
+@keyframes pulseText{0%,100%{opacity:1}50%{opacity:.5}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand"><div class="brand-mark">Ar</div><div><div class="brand-name">argonone</div><div class="brand-host">rpi01.lan</div></div></div>
+    <ul class="navlist">
+      <li><a href="03-dashboard.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="2" width="7" height="7" rx="1.5"/><rect x="11" y="2" width="7" height="7" rx="1.5"/><rect x="2" y="11" width="7" height="7" rx="1.5"/><rect x="11" y="11" width="7" height="7" rx="1.5"/></svg>Dashboard</a></li>
+      <li><a href="04-fan-curve-editor.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="1.5"/><path d="M10 10C10 4 15 3 16 7c.4 1.7-2 3-6 3"/><path d="M10 10C4 10 3 15 7 16c1.7.4 3-2 3-6"/><path d="M10 10C10 16 5 17 4 13c-.4-1.7 2-3 6-3"/><path d="M10 10c6 0 7-5 3-6-1.7-.4-3 2-3 6"/></svg>Fan control</a></li>
+      <li><a href="05-storage-raid.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><ellipse cx="10" cy="4.5" rx="7" ry="2.5"/><path d="M3 4.5v11c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-11"/><path d="M3 10c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/></svg>Storage &amp; RAID</a></li>
+      <li><a href="06-oled-display.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="4" width="16" height="10" rx="1.5"/><circle cx="10" cy="9" r="1.3"/><line x1="7" y1="17" x2="13" y2="17"/></svg>Display</a></li>
+      <li><a class="active" href="08-system-settings.html#power"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M11 2 4 12h5l-1 6 7-10h-5z"/></svg>Power &amp; RTC</a></li>
+      <div class="divider"></div>
+      <li><a href="07-users-rbac.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7.5" cy="6.5" r="3"/><path d="M2 17c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/><circle cx="15" cy="7.5" r="2.2"/><path d="M13.3 12.2c2.6.3 4.5 2.1 4.5 4.8"/></svg>Users</a></li>
+      <li><a class="active" href="08-system-settings.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="3"/><path d="M10 2v2.4M10 15.6V18M18 10h-2.4M4.4 10H2M15.6 4.4l-1.7 1.7M6.1 13.9l-1.7 1.7M15.6 15.6l-1.7-1.7M6.1 6.1 4.4 4.4"/></svg>System</a></li>
+    </ul>
+    <div class="sidebar-foot"><div class="avatar">JD</div><div><div class="user-name">John Doe</div><div class="user-role">Operator</div></div></div>
+  </aside>
+
+  <div class="main">
+    <div class="statusbar">
+      <div class="stat"><div class="stat-label">CPU temp</div><div class="stat-value"><span class="dot good"></span>46<span class="unit">°C</span></div></div>
+      <div class="stat"><div class="stat-label">Fan</div><div class="stat-value"><span class="dot good"></span>38<span class="unit">%</span></div></div>
+      <div class="stat"><div class="stat-label">RAM</div><div class="stat-value">3.8<span class="unit">/ 8 GB</span></div></div>
+      <div class="stat"><div class="stat-label">IP address</div><div class="stat-value">192.168.1.42</div></div>
+    </div>
+
+    <div class="content">
+      <div class="page-head">
+        <h1>System</h1>
+        <p class="page-sub">Units, power schedule, IR remote, and firmware — the lower-frequency settings.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Units</div>
+        <p class="card-sub">Applies to every temperature reading across the dashboard and OLED panel.</p>
+        <div class="seg" id="unitsSeg">
+          <div class="seg-indicator" id="segIndicator"></div>
+          <button class="active" data-unit="C">Celsius</button><button data-unit="F">Fahrenheit</button>
+        </div>
+      </div>
+
+      <div class="card" id="power">
+        <div class="card-title">Power schedule (RTC)</div>
+        <p class="card-sub">Wake and sleep times stored on the EON's onboard clock — kept even when the Pi is fully powered off.</p>
+        <table class="sched" id="schedTable">
+          <thead><tr><th>Type</th><th>Days</th><th>Time</th><th></th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge wake">Wake</span></td><td>Mon–Fri</td><td class="row-sub" style="font-family:var(--font-mono);color:var(--text)">06:30</td><td><a href="#" class="rm-row" style="color:var(--muted);font-size:12px;">Remove</a></td></tr>
+            <tr><td><span class="badge sleep">Sleep</span></td><td>Every day</td><td class="row-sub" style="font-family:var(--font-mono);color:var(--text)">23:00</td><td><a href="#" class="rm-row" style="color:var(--muted);font-size:12px;">Remove</a></td></tr>
+          </tbody>
+        </table>
+        <button class="addbtn" id="addSchedBtn">+ Add schedule</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">IR remote</div>
+        <p class="card-sub">Program the case's IR receiver to respond to a remote's power button.</p>
+        <div class="row">
+          <div><div class="row-label" id="irLabel">Learned code</div><div class="row-sub" id="irSub">None configured</div></div>
+          <button class="btn ghost" id="learnBtn">Learn code</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Firmware &amp; service</div>
+        <table class="kv">
+          <tr><td>Argon MCU firmware</td><td>v1.4</td></tr>
+          <tr><td>argonone-rs</td><td>0.4.2</td></tr>
+          <tr><td>OS</td><td>Ubuntu 26.04 LTS (aarch64)</td></tr>
+          <tr><td>Service</td><td><span class="badge wake">running</span></td></tr>
+          <tr><td>PSU/EEPROM config</td><td>OK</td></tr>
+        </table>
+      </div>
+
+      <div class="card danger">
+        <div class="card-title" style="color:var(--crit)">Danger zone</div>
+        <div class="danger-row">
+          <div><div class="row-label">Restart service</div><div class="row-sub">Fan/display briefly stop responding during restart</div></div>
+          <button class="btn ghost confirm-btn" data-label="Restart" data-msg="Service restarting…">Restart</button>
+        </div>
+        <div class="danger-row">
+          <div><div class="row-label">Reset all settings to defaults</div><div class="row-sub">Fan curves, OLED rotation, units, schedules — does not remove users</div></div>
+          <button class="btn danger confirm-btn" data-label="Reset" data-msg="Settings reset to defaults">Reset</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"><span class="toast-dot"></span><span id="toastMsg"></span></div>
+<script>
+function showToast(msg){
+  const toast = document.getElementById('toast');
+  document.getElementById('toastMsg').textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(()=>toast.classList.remove('show'), 2400);
+}
+
+// Sliding segmented control
+const seg = document.getElementById('unitsSeg');
+const indicator = document.getElementById('segIndicator');
+function positionIndicator(btn){
+  indicator.style.width = btn.offsetWidth + 'px';
+  indicator.style.transform = `translateX(${btn.offsetLeft - 3}px)`;
+}
+const segButtons = seg.querySelectorAll('button');
+positionIndicator(seg.querySelector('button.active'));
+segButtons.forEach(btn => btn.addEventListener('click', () => {
+  segButtons.forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  positionIndicator(btn);
+  showToast(btn.dataset.unit === 'C' ? 'Units set to Celsius' : 'Units set to Fahrenheit');
+}));
+window.addEventListener('resize', () => positionIndicator(seg.querySelector('button.active')));
+
+// IR learn flow
+document.getElementById('learnBtn').addEventListener('click', function(){
+  const label = document.getElementById('irLabel'), sub = document.getElementById('irSub');
+  this.disabled = true; this.textContent = 'Listening…';
+  label.classList.add('row-learning'); sub.textContent = 'Press the power button on your remote';
+  setTimeout(() => {
+    label.classList.remove('row-learning');
+    label.textContent = 'Learned code'; sub.textContent = '0x20DF10EF';
+    this.disabled = false; this.textContent = 'Re-learn';
+    showToast('IR code learned');
+  }, 2200);
+});
+
+// Add / remove schedule rows
+document.getElementById('addSchedBtn').addEventListener('click', () => {
+  const tbody = document.querySelector('#schedTable tbody');
+  const tr = document.createElement('tr');
+  tr.className = 'new-row';
+  tr.innerHTML = `<td><span class="badge wake">Wake</span></td><td>Sat–Sun</td><td style="font-family:var(--font-mono)">08:00</td><td><a href="#" class="rm-row" style="color:var(--muted);font-size:12px;">Remove</a></td>`;
+  tbody.appendChild(tr);
+  tr.querySelector('.rm-row').addEventListener('click', (e)=>{ e.preventDefault(); tr.remove(); });
+});
+document.querySelectorAll('.rm-row').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); e.target.closest('tr').remove(); }));
+
+// Confirm-to-destroy pattern for danger zone actions
+document.querySelectorAll('.confirm-btn').forEach(btn => {
+  let armed = false, timer;
+  btn.addEventListener('click', () => {
+    if(!armed){
+      armed = true; btn.textContent = 'Click to confirm';
+      btn.style.background = 'var(--crit)'; btn.style.color = '#fff'; btn.style.borderColor = 'var(--crit)';
+      timer = setTimeout(() => { armed=false; btn.textContent = btn.dataset.label; btn.style.background=''; btn.style.color=''; btn.style.borderColor=''; }, 3000);
+    } else {
+      clearTimeout(timer); armed = false;
+      btn.textContent = btn.dataset.label; btn.style.background=''; btn.style.color=''; btn.style.borderColor='';
+      showToast(btn.dataset.msg);
+    }
+  });
+});
+</script>
+</body>
+</html>

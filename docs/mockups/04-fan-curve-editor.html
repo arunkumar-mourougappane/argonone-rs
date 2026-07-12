@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fan control — argonone</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+:root{
+  --bg:#F4F5F9; --panel:#FFFFFF; --panel-2:#F8F8FC; --border:#DFE1EA; --text:#1B1E27; --muted:#5B6172;
+  --accent:#6857E8; --accent-soft:#EDEAFB;
+  --good:#2E9C63; --good-soft:#E4F6EC; --warn:#B5791C; --warn-soft:#FBF0DC; --crit:#C43450; --crit-soft:#FBE4E9;
+  --shadow:0 1px 2px rgba(20,22,30,.06), 0 8px 24px rgba(20,22,30,.05);
+  --font-ui:'IBM Plex Sans',-apple-system,"Segoe UI",sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){ :root{ --bg:#0C0E13; --panel:#14171F; --panel-2:#181C25; --border:#262B36; --text:#E7E9F0; --muted:#8A90A3;
+  --accent:#8B7FFF; --accent-soft:rgba(139,127,255,.14); --good:#4FBE86; --good-soft:rgba(79,190,134,.14);
+  --warn:#E3A83F; --warn-soft:rgba(227,168,63,.14); --crit:#E5677A; --crit-soft:rgba(229,103,122,.14);
+  --shadow:0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.4); } }
+:root[data-theme="dark"]{ --bg:#0C0E13; --panel:#14171F; --panel-2:#181C25; --border:#262B36; --text:#E7E9F0; --muted:#8A90A3;
+  --accent:#8B7FFF; --accent-soft:rgba(139,127,255,.14); --good:#4FBE86; --good-soft:rgba(79,190,134,.14);
+  --warn:#E3A83F; --warn-soft:rgba(227,168,63,.14); --crit:#E5677A; --crit-soft:rgba(229,103,122,.14);
+  --shadow:0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.4); }
+:root[data-theme="light"]{ --bg:#F4F5F9; --panel:#FFFFFF; --panel-2:#F8F8FC; --border:#DFE1EA; --text:#1B1E27; --muted:#5B6172;
+  --accent:#6857E8; --accent-soft:#EDEAFB; --good:#2E9C63; --good-soft:#E4F6EC; --warn:#B5791C; --warn-soft:#FBF0DC;
+  --crit:#C43450; --crit-soft:#FBE4E9; --shadow:0 1px 2px rgba(20,22,30,.06), 0 8px 24px rgba(20,22,30,.05); }
+
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size:14px;}
+a{color:inherit;}
+.shell{display:flex;min-height:100vh;}
+.sidebar{width:216px;flex:none;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:18px 12px;position:sticky;top:0;height:100vh;}
+.brand{display:flex;align-items:center;gap:9px;padding:6px 8px 18px;border-bottom:1px solid var(--border);margin-bottom:10px;}
+.brand-mark{width:26px;height:26px;border-radius:7px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font-mono);font-weight:600;font-size:12px;flex:none;}
+.brand-name{font-weight:600;font-size:14px;}
+.brand-host{font-family:var(--font-mono);font-size:10.5px;color:var(--muted);}
+.navlist{list-style:none;padding:0;margin:6px 0 0;display:flex;flex-direction:column;gap:1px;}
+.navlist a{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;color:var(--muted);text-decoration:none;font-size:13px;font-weight:500;}
+.navlist a:hover{background:var(--panel-2);color:var(--text);}
+.navlist a.active{background:var(--accent-soft);color:var(--accent);}
+.navlist svg{width:16px;height:16px;flex:none;}
+.navlist .divider{height:1px;background:var(--border);margin:10px 4px;}
+.sidebar-foot{margin-top:auto;padding-top:12px;border-top:1px solid var(--border);display:flex;align-items:center;gap:9px;}
+.avatar{width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:11px;font-weight:600;flex:none;}
+.user-name{font-size:12.5px;font-weight:600;line-height:1.3;}
+.user-role{font-family:var(--font-mono);font-size:10px;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;}
+.main{flex:1;min-width:0;}
+.statusbar{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--border);background:var(--panel);}
+.stat{padding:13px 22px;border-right:1px solid var(--border);}
+.stat-label{font-family:var(--font-mono);font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px;}
+.stat-value{font-family:var(--font-mono);font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;display:flex;align-items:baseline;gap:5px;}
+.stat-value .unit{font-size:12px;color:var(--muted);font-weight:500;}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:6px;}
+.dot.good{background:var(--good);}
+.content{padding:26px 26px 64px;max-width:1120px;}
+.page-head{margin-bottom:6px;}
+.page-head h1{font-size:20px;margin:0 0 4px;font-weight:700;}
+.page-sub{color:var(--muted);font-size:13px;margin:0 0 18px;}
+
+.tabs{display:flex;gap:4px;background:var(--panel-2);border:1px solid var(--border);border-radius:9px;padding:3px;width:max-content;margin-bottom:18px;}
+.tabs button{border:none;background:none;font-family:var(--font-ui);font-size:12.5px;font-weight:600;padding:7px 16px;border-radius:7px;color:var(--muted);cursor:pointer;}
+.tabs button.active{background:var(--panel);color:var(--text);box-shadow:var(--shadow);}
+
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px 22px;}
+.card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+.card-title{font-weight:600;font-size:14px;}
+.badge{font-family:var(--font-mono);font-size:10.5px;padding:3px 9px;border-radius:20px;font-weight:600;}
+.badge.good{background:var(--good-soft);color:var(--good);}
+.badge.accent{background:var(--accent-soft);color:var(--accent);}
+
+.chart-wrap{position:relative;margin:14px 0 4px;}
+.chart-wrap svg{width:100%;height:280px;overflow:visible;}
+.axis-label-x{font-family:var(--font-mono);font-size:10px;fill:var(--muted);}
+.axis-label-y{font-family:var(--font-mono);font-size:10px;fill:var(--muted);}
+.gridline{stroke:var(--border);stroke-width:1;}
+.curve-area{fill:var(--accent-soft);opacity:.55;}
+.curve-line{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+.pt{fill:var(--panel);stroke:var(--accent);stroke-width:2.5;cursor:grab;}
+.pt.dragging{cursor:grabbing;}
+.now-line{stroke:var(--warn);stroke-width:1.4;stroke-dasharray:3 3;}
+.now-dot{fill:var(--warn);}
+.now-label{font-family:var(--font-mono);font-size:10.5px;fill:var(--warn);font-weight:600;}
+
+.axis-caption{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:11px;color:var(--muted);margin-top:2px;}
+
+table.pts{width:100%;border-collapse:collapse;margin-top:20px;font-size:13px;}
+table.pts th{text-align:left;font-family:var(--font-mono);font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600;padding:0 10px 8px;border-bottom:1px solid var(--border);}
+table.pts td{padding:9px 10px;border-bottom:1px solid var(--border);}
+table.pts input{width:64px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);font-family:var(--font-mono);font-size:12.5px;}
+table.pts input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+.rm{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;}
+.rm:hover{color:var(--crit);}
+.addpt{margin-top:12px;background:none;border:1px dashed var(--border);color:var(--accent);font-family:var(--font-ui);font-weight:600;font-size:12.5px;padding:8px 14px;border-radius:8px;cursor:pointer;}
+
+.actions{display:flex;justify-content:space-between;align-items:center;margin-top:22px;}
+.btn{padding:9px 18px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-family:var(--font-ui);font-weight:600;font-size:13px;cursor:pointer;}
+.btn.ghost{background:none;border:1px solid var(--border);color:var(--text);}
+
+.note{display:flex;gap:10px;background:var(--panel-2);border-radius:10px;padding:11px 14px;margin-top:18px;}
+.note svg{flex:none;color:var(--muted);margin-top:1px;}
+.note p{margin:0;font-size:12px;line-height:1.55;color:var(--muted);}
+
+.toast{position:fixed;bottom:22px;right:22px;background:var(--panel);border:1px solid var(--border);border-radius:10px;
+  box-shadow:var(--shadow);padding:11px 16px;font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:8px;
+  transform:translateY(12px);opacity:0;pointer-events:none;transition:transform .25s cubic-bezier(.16,1,.3,1), opacity .25s ease;z-index:20;}
+.toast.show{transform:translateY(0);opacity:1;}
+.toast-dot{width:7px;height:7px;border-radius:50%;background:var(--good);flex:none;}
+.pt{transition:r .12s ease;}
+.pt:hover{r:8;}
+.pt.dragging{r:8;}
+table.pts input{transition:border-color .15s ease, box-shadow .15s ease;}
+
+@media (prefers-reduced-motion: no-preference){
+  .card{opacity:0;animation:fadeUp .5s cubic-bezier(.16,1,.3,1) .08s forwards;}
+  .tabs,.page-head{opacity:0;animation:fadeUp .45s cubic-bezier(.16,1,.3,1) forwards;}
+  .tabs{animation-delay:.05s}
+  .tabs button{transition:background-color .15s ease, box-shadow .15s ease, color .15s ease;}
+  .now-dot{animation:pulseDot 2s ease-in-out infinite;}
+  .btn{transition:transform .1s ease, filter .15s ease;}
+  .btn:active{transform:scale(.97);}
+  .addpt{transition:background-color .15s ease, border-color .15s ease;}
+  .addpt:hover{background:var(--accent-soft);border-color:var(--accent);}
+}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes pulseDot{0%,100%{opacity:1;r:4}50%{opacity:.5;r:5.5}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand"><div class="brand-mark">Ar</div><div><div class="brand-name">argonone</div><div class="brand-host">rpi01.lan</div></div></div>
+    <ul class="navlist">
+      <li><a href="03-dashboard.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="2" width="7" height="7" rx="1.5"/><rect x="11" y="2" width="7" height="7" rx="1.5"/><rect x="2" y="11" width="7" height="7" rx="1.5"/><rect x="11" y="11" width="7" height="7" rx="1.5"/></svg>Dashboard</a></li>
+      <li><a class="active" href="04-fan-curve-editor.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="1.5"/><path d="M10 10C10 4 15 3 16 7c.4 1.7-2 3-6 3"/><path d="M10 10C4 10 3 15 7 16c1.7.4 3-2 3-6"/><path d="M10 10C10 16 5 17 4 13c-.4-1.7 2-3 6-3"/><path d="M10 10c6 0 7-5 3-6-1.7-.4-3 2-3 6"/></svg>Fan control</a></li>
+      <li><a href="05-storage-raid.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><ellipse cx="10" cy="4.5" rx="7" ry="2.5"/><path d="M3 4.5v11c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-11"/><path d="M3 10c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/></svg>Storage &amp; RAID</a></li>
+      <li><a href="06-oled-display.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="4" width="16" height="10" rx="1.5"/><circle cx="10" cy="9" r="1.3"/><line x1="7" y1="17" x2="13" y2="17"/></svg>Display</a></li>
+      <li><a href="08-system-settings.html#power"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M11 2 4 12h5l-1 6 7-10h-5z"/></svg>Power &amp; RTC</a></li>
+      <div class="divider"></div>
+      <li><a href="07-users-rbac.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7.5" cy="6.5" r="3"/><path d="M2 17c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/><circle cx="15" cy="7.5" r="2.2"/><path d="M13.3 12.2c2.6.3 4.5 2.1 4.5 4.8"/></svg>Users</a></li>
+      <li><a href="08-system-settings.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="3"/><path d="M10 2v2.4M10 15.6V18M18 10h-2.4M4.4 10H2M15.6 4.4l-1.7 1.7M6.1 13.9l-1.7 1.7M15.6 15.6l-1.7-1.7M6.1 6.1 4.4 4.4"/></svg>System</a></li>
+    </ul>
+    <div class="sidebar-foot"><div class="avatar">JD</div><div><div class="user-name">John Doe</div><div class="user-role">Operator</div></div></div>
+  </aside>
+
+  <div class="main">
+    <div class="statusbar">
+      <div class="stat"><div class="stat-label">CPU temp</div><div class="stat-value"><span class="dot good"></span>46<span class="unit">°C</span></div></div>
+      <div class="stat"><div class="stat-label">Fan</div><div class="stat-value"><span class="dot good"></span>38<span class="unit">%</span></div></div>
+      <div class="stat"><div class="stat-label">RAM</div><div class="stat-value">3.8<span class="unit">/ 8 GB</span></div></div>
+      <div class="stat"><div class="stat-label">IP address</div><div class="stat-value">192.168.1.42</div></div>
+    </div>
+
+    <div class="content">
+      <div class="page-head">
+        <h1>Fan control</h1>
+        <p class="page-sub">Drag points to change the temperature→speed curve. Changes apply immediately.</p>
+      </div>
+
+      <div class="tabs">
+        <button class="active" data-curve="cpu">CPU curve</button>
+        <button data-curve="hdd">HDD curve</button>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">Temperature → fan speed</div>
+          <span class="badge good">now: 46°C → <span id="nowPct">38</span>%</span>
+        </div>
+
+        <div class="chart-wrap">
+          <svg viewBox="0 0 620 280" preserveAspectRatio="none" id="chart">
+            <!-- grid -->
+            <g>
+              <line class="gridline" x1="50" y1="10" x2="50" y2="240"/>
+              <line class="gridline" x1="50" y1="240" x2="600" y2="240"/>
+              <line class="gridline" x1="50" y1="180" x2="600" y2="180" stroke-dasharray="2 4"/>
+              <line class="gridline" x1="50" y1="120" x2="600" y2="120" stroke-dasharray="2 4"/>
+              <line class="gridline" x1="50" y1="60"  x2="600" y2="60"  stroke-dasharray="2 4"/>
+              <text class="axis-label-y" x="14" y="244">0%</text>
+              <text class="axis-label-y" x="8"  y="184">30%</text>
+              <text class="axis-label-y" x="8"  y="124">60%</text>
+              <text class="axis-label-y" x="14" y="64">100%</text>
+              <text class="axis-label-x" x="46"  y="258">30°C</text>
+              <text class="axis-label-x" x="180" y="258">50°C</text>
+              <text class="axis-label-x" x="320" y="258">65°C</text>
+              <text class="axis-label-x" x="460" y="258">80°C</text>
+              <text class="axis-label-x" x="580" y="258">100°C</text>
+            </g>
+            <path class="curve-area" id="curveArea"/>
+            <path class="curve-line" id="curveLine"/>
+            <!-- current position marker (fixed at 46°C, y follows the curve) -->
+            <line class="now-line" x1="230" y1="0" x2="230" y2="240"/>
+            <circle class="now-dot" id="nowDot" cx="230" cy="207" r="4"/>
+            <text class="now-label" x="238" y="20">now · 46°C</text>
+            <!-- draggable points -->
+            <circle class="pt" data-i="0" cx="50" cy="240" r="6"/>
+            <circle class="pt" data-i="1" cx="253" cy="220" r="6"/>
+            <circle class="pt" data-i="2" cx="297" cy="175" r="6"/>
+            <circle class="pt" data-i="3" cx="341" cy="60" r="6"/>
+            <circle class="pt" id="endPt" cx="600" cy="60" r="6" style="cursor:default"/>
+          </svg>
+        </div>
+
+        <table class="pts" id="ptsTable">
+          <thead><tr><th>Temperature</th><th>Fan speed</th><th></th></tr></thead>
+          <tbody>
+            <tr><td><input data-i="0" data-axis="t" value="30" type="text">°C</td><td><input data-i="0" data-axis="s" value="0" type="text">%</td><td><button class="rm">×</button></td></tr>
+            <tr><td><input data-i="1" data-axis="t" value="55" type="text">°C</td><td><input data-i="1" data-axis="s" value="30" type="text">%</td><td><button class="rm">×</button></td></tr>
+            <tr><td><input data-i="2" data-axis="t" value="60" type="text">°C</td><td><input data-i="2" data-axis="s" value="55" type="text">%</td><td><button class="rm">×</button></td></tr>
+            <tr><td><input data-i="3" data-axis="t" value="65" type="text">°C</td><td><input data-i="3" data-axis="s" value="100" type="text">%</td><td><button class="rm">×</button></td></tr>
+          </tbody>
+        </table>
+        <button class="addpt">+ Add point</button>
+
+        <div class="actions">
+          <button class="btn ghost" id="resetBtn">Reset to default</button>
+          <button class="btn" id="saveBtn">Save curve</button>
+        </div>
+
+        <div class="note">
+          <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.5v.01"/></svg>
+          <p>Fan speed <b>reductions</b> are delayed 30 seconds after the temperature drops, to avoid audible fluctuation from rapid on/off cycling. Increases apply immediately. If the HDD curve requests a higher speed than the CPU curve, the higher value wins.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"><span class="toast-dot"></span><span id="toastMsg">Fan curve saved</span></div>
+<script>
+const svg = document.getElementById('chart');
+const pts = [...document.querySelectorAll('.pt[data-i]')];
+const endPt = document.getElementById('endPt');
+const curveLine = document.getElementById('curveLine');
+const curveArea = document.getElementById('curveArea');
+const nowDot = document.getElementById('nowDot');
+const nowPctLabel = document.getElementById('nowPct');
+const X0=50, X1=600, T0=30, T1=100, Y0=240, Y1=60, NOW_X=230;
+
+const presets = {
+  cpu: [[30,0],[55,30],[60,55],[65,100]],
+  hdd: [[30,0],[40,30],[50,55],[55,100]],
+};
+let current = 'cpu';
+
+function tempToX(t){ return X0 + (t-T0) * (X1-X0)/(T1-T0); }
+function xToTemp(x){ return T0 + (x-X0) * (T1-T0)/(X1-X0); }
+function pctToY(p){ return Y0 + (p/100) * (Y1-Y0); }
+function yToPct(y){ return ((y-Y0)/(Y1-Y0))*100; }
+function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+
+function redraw(){
+  const coords = pts.map(pt => ({x:+pt.getAttribute('cx'), y:+pt.getAttribute('cy')}));
+  endPt.setAttribute('cy', coords[coords.length-1].y);
+  const d = 'M' + coords.map(c=>`${c.x},${c.y}`).join(' L') + ` L${endPt.getAttribute('cx')},${endPt.getAttribute('cy')}`;
+  curveLine.setAttribute('d', d);
+  curveArea.setAttribute('d', d + ` L${endPt.getAttribute('cx')},240 L${coords[0].x},240 Z`);
+  // interpolate the "now" dot along the polyline at NOW_X
+  const all = [...coords, {x:+endPt.getAttribute('cx'), y:+endPt.getAttribute('cy')}];
+  let y = all[all.length-1].y;
+  for(let i=0;i<all.length-1;i++){
+    const a=all[i], b=all[i+1];
+    if(NOW_X>=a.x && NOW_X<=b.x){ const f=(NOW_X-a.x)/((b.x-a.x)||1); y = a.y + (b.y-a.y)*f; break; }
+    if(NOW_X < all[0].x){ y = all[0].y; break; }
+  }
+  nowDot.setAttribute('cy', y.toFixed(1));
+  nowPctLabel.textContent = Math.round(clamp(yToPct(y),0,100));
+}
+
+function syncTableFromPoint(i){
+  const pt = pts[i];
+  const t = Math.round(xToTemp(+pt.getAttribute('cx')));
+  const s = Math.round(yToPct(+pt.getAttribute('cy')));
+  document.querySelector(`input[data-i="${i}"][data-axis="t"]`).value = t;
+  document.querySelector(`input[data-i="${i}"][data-axis="s"]`).value = s;
+}
+function syncPointFromTable(i){
+  const t = clamp(+document.querySelector(`input[data-i="${i}"][data-axis="t"]`).value, T0, T1);
+  const s = clamp(+document.querySelector(`input[data-i="${i}"][data-axis="s"]`).value, 0, 100);
+  pts[i].setAttribute('cx', tempToX(t).toFixed(1));
+  pts[i].setAttribute('cy', pctToY(s).toFixed(1));
+  redraw();
+}
+
+function svgPoint(evt){
+  const r = svg.getBoundingClientRect();
+  const x = (evt.clientX - r.left) / r.width * 620;
+  const y = (evt.clientY - r.top) / r.height * 280;
+  return {x,y};
+}
+
+let dragging = null;
+pts.forEach(pt => {
+  pt.addEventListener('pointerdown', (e) => {
+    dragging = pt; pt.classList.add('dragging'); pt.setPointerCapture(e.pointerId);
+  });
+});
+svg.addEventListener('pointermove', (e) => {
+  if(!dragging) return;
+  const i = +dragging.getAttribute('data-i');
+  const {x,y} = svgPoint(e);
+  const prevX = i===0 ? X0 : +pts[i-1].getAttribute('cx');
+  const nextX = i===pts.length-1 ? X1 : +pts[i+1].getAttribute('cx');
+  const cx = i===0 ? X0 : clamp(x, prevX+4, nextX-4);
+  const cy = clamp(y, Y1, Y0);
+  dragging.setAttribute('cx', cx.toFixed(1));
+  dragging.setAttribute('cy', cy.toFixed(1));
+  syncTableFromPoint(i);
+  redraw();
+});
+window.addEventListener('pointerup', () => { if(dragging){ dragging.classList.remove('dragging'); dragging=null; } });
+
+document.querySelectorAll('table.pts input').forEach(inp => {
+  inp.addEventListener('change', () => syncPointFromTable(+inp.getAttribute('data-i')));
+});
+
+function tweenTo(targetPreset, ms=450){
+  const start = pts.map(pt => ({x:+pt.getAttribute('cx'), y:+pt.getAttribute('cy')}));
+  const target = targetPreset.map(([t,s]) => ({x:tempToX(t), y:pctToY(s)}));
+  const t0 = performance.now();
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(reduceMotion){
+    pts.forEach((pt,i)=>{ pt.setAttribute('cx', target[i].x.toFixed(1)); pt.setAttribute('cy', target[i].y.toFixed(1)); syncTableFromPoint(i); });
+    redraw(); return;
+  }
+  function ease(x){ return 1 - Math.pow(1-x, 3); }
+  function frame(now){
+    const f = ease(clamp((now-t0)/ms, 0, 1));
+    pts.forEach((pt,i)=>{
+      const cx = start[i].x + (target[i].x-start[i].x)*f;
+      const cy = start[i].y + (target[i].y-start[i].y)*f;
+      pt.setAttribute('cx', cx.toFixed(1)); pt.setAttribute('cy', cy.toFixed(1));
+    });
+    redraw();
+    if(f<1) requestAnimationFrame(frame); else pts.forEach((_,i)=>syncTableFromPoint(i));
+  }
+  requestAnimationFrame(frame);
+}
+
+document.querySelectorAll('.tabs button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    current = btn.getAttribute('data-curve');
+    tweenTo(presets[current]);
+  });
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => tweenTo(presets[current]));
+
+function showToast(msg){
+  const toast = document.getElementById('toast');
+  document.getElementById('toastMsg').textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(()=>toast.classList.remove('show'), 2400);
+}
+document.getElementById('saveBtn').addEventListener('click', () => showToast(`${current.toUpperCase()} curve saved`));
+
+redraw();
+</script>
+</body>
+</html>
