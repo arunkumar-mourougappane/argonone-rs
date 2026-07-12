@@ -1,4 +1,7 @@
 # argonone-rs
+
+[![CI](https://github.com/arunkumar-mourougappane/argonone-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/arunkumar-mourougappane/argonone-rs/actions/workflows/ci.yml)
+
 A rust based monitoring and management system for argon one cases of raspberry pi
 
 ## Docs
