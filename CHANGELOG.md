@@ -67,6 +67,10 @@ mean starting at `v0.1.0`.
 - Board auto-detection (Argon ONE vs EON) by probing for the OLED
   (`0x3c`) and RTC (`0x51`) addresses at runtime, not an install-time
   flag (v0.1.0, W§2.6).
+- GPIO power-button monitor (BCM pin 4, character-device v2 uAPI via the
+  `gpiod` crate), classifying pulse width into reboot/shutdown/OLED-
+  switch actions — replaces the old sysfs/RPi.GPIO code paths outright
+  rather than replicating them (v0.1.0, W§1.1).
 
 ### Changed
 
