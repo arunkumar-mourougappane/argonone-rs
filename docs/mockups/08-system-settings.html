@@ -53,6 +53,8 @@ a{color:inherit;}
 .stat-value .unit{font-size:12px;color:var(--muted);font-weight:500;}
 .dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:6px;}
 .dot.good{background:var(--good);}
+.dot.warn{background:var(--warn);}
+.kv td.expiring{color:var(--warn);}
 .content{padding:26px 26px 64px;max-width:980px;}
 .page-head h1{font-size:20px;margin:0 0 4px;font-weight:700;}
 .page-sub{color:var(--muted);font-size:13px;margin:0 0 22px;}
@@ -217,11 +219,11 @@ tr.new-row{animation:rowIn .4s cubic-bezier(.16,1,.3,1) both;}
             <table class="kv">
               <tr><td>Tailnet address</td><td>rpi01.tail4f2a.ts.net</td></tr>
               <tr><td>Issuer</td><td>Let's Encrypt</td></tr>
-              <tr><td>Expires</td><td>in 62 days</td></tr>
+              <tr><td>Expires</td><td class="expiring"><span class="dot warn"></span>in 21 days</td></tr>
               <tr><td>Auto-renew</td><td><span class="badge wake">enabled</span></td></tr>
             </table>
             <div class="row" style="padding-top:12px;">
-              <div><div class="row-label">Certificate active</div><div class="row-sub">Issued via <code style="font-family:var(--font-mono)">tailscale cert</code>, renews automatically at 30 days remaining</div></div>
+              <div><div class="row-label">Certificate active</div><div class="row-sub">Issued via <code style="font-family:var(--font-mono)">tailscale cert</code> (90-day Let's Encrypt lifetime) — within 30 days of expiry, so a renewal is scheduled automatically; no action needed</div></div>
               <button class="btn ghost">Re-issue now</button>
             </div>
           </div>
