@@ -115,21 +115,44 @@ copyright/redistribution statement** — `download.argon40.com` ships them as
 bare files with no metadata at all. Absence of a license is not permission;
 under default copyright, Argon40 (or whoever they licensed the artwork
 from) retains all rights to the fonts, background bitmaps, and the
-`logo1v5.bin` logo specifically — the logo in particular is a trademark/brand
-asset, a different and clearer problem than the fonts.
+`logo1v5.bin` splash screen specifically. Correction to earlier drafts of
+this doc: decoding `logo1v5.bin` (§1.7 has the method) shows it isn't
+literally Argon40's corporate logo — it reads **"ONE V5"** (a
+product/version splash for the Argon ONE V5 case model). Doesn't change
+the caution much: "Argon ONE" as a product name is presumably still
+trademarked, so displaying it in a third-party rewrite is the same class
+of concern a literal logo would be — just worth being precise about what
+the asset actually is.
 
 This matters differently for the two asset classes:
 
 - **Fonts/backgrounds (`font*.bin`, `bg*.bin`)**: functional bitmap data
   (glyph shapes, simple line-art dashboard backgrounds). Low creative
   threshold, but still not obviously fair game to vendor into a public
-  Rust repo without asking.
-- **`logo1v5.bin` (Argon40 logo)**: don't ship this one regardless of the
-  fonts/backgrounds decision — redistributing someone else's brand mark in
-  a third-party rewrite is the clearer problem of the two, license question
-  aside.
+  Rust repo without asking. **Still open** — no replacement built yet.
+- **`logo1v5.bin` ("ONE V5" splash)**: don't ship this one regardless of
+  the fonts/backgrounds decision — redistributing Argon's product-name
+  splash in a third-party rewrite is the clearer problem of the two,
+  license question aside. **Resolved** — see below.
 
-Recommended path, in order of preference:
+**Resolution for the splash screen: replaced with an original design**,
+not a hypothetical. `argonone-rs` ships its own boot/rotation screen
+instead: `RPI` rotated 90° in a left column, the detected Raspberry Pi
+model (`V3`/`V4`/`V5`) large and horizontal filling the rest of the frame,
+and a small `argonone` signature tucked in the corner — deliberately the
+same *layout structure* as Argon's original (rotated word + big version
+number) since that structure itself isn't copyrightable, built entirely
+from an original wordmark and system font, zero bytes of Argon40's asset
+touched. Shown live in `docs/mockups/06-oled-display.html`'s preview cycle
+and screen-rotation list (enabled by default now that it's an asset this
+project actually owns). Implementation note for when real code exists:
+this should be generated at build/runtime from the daemon's own
+board-detection (§2.6), not shipped as three static pre-baked `.bin`
+files — one small generator (pattern proven in this doc's research: hand-
+author the wordmark, pack into the background format from §1.7) covers
+every current and future Pi version without a hardcoded asset per model.
+
+Remaining path for fonts/backgrounds, in order of preference:
 
 1. **Ask Argon40 directly** whether the asset files (not just the scripts)
    can be redistributed by a community Rust rewrite — cheap to do, and the
@@ -137,18 +160,20 @@ Recommended path, in order of preference:
    with it, but that's an assumption, not a confirmed answer.
 2. **If no answer / declined**: regenerate equivalent assets from scratch —
    the fonts are standard bitmap font sizes (6x8, 8x16, etc.) that can be
-   redrawn or sourced from a permissively-licensed bitmap font, and the
+   redrawn or sourced from a permissively-licensed bitmap font (Adafruit's
+   GFX library ships a BSD-licensed 5×7 font purpose-built for small OLEDs
+   — a better source than hand-drawing 256 glyphs across 7 sizes), and the
    dashboard backgrounds are simple enough (per the blitting code in
    `argononeoled.py`) to redraw as plain rectangles/labels rather than
-   pixel-identical recreations of Argon40's originals.
-3. **Ship no default logo screen** — trivial to drop as a screen option
-   entirely; it's one of seven rotation screens in the mockup and the least
-   functionally important one.
-4. Whatever the outcome, **don't commit the original `.bin` files to the
-   `argonone-rs` git history** while this is unresolved — treat them the
-   way the existing `argonone` research-scratch repo treats them (fetched
-   at install/build time from `download.argon40.com`, not vendored) so
-   there's no redistribution act to walk back later.
+   pixel-identical recreations of Argon40's originals. Same proven
+   approach as the splash screen above, just more glyphs.
+3. Whatever the outcome, **don't commit Argon40's original `.bin` files to
+   the `argonone-rs` git history** while this is unresolved — treat them
+   the way the existing `argonone` research-scratch repo treats them
+   (fetched at install/build time from `download.argon40.com`, not
+   vendored) so there's no redistribution act to walk back later. This
+   doesn't apply to the splash screen anymore — that's an original asset,
+   safe to commit outright.
 
 ### 1.6 Is reimplementing the protocol/software allowed at all?
 
