@@ -62,6 +62,11 @@ mean starting at `v0.1.0`.
 - `HardwareBackend` trait (`FanBackend`/`PowerButtonBackend`) with no-op
   fallbacks, so the daemon never crashes on a Pi without the case
   attached (v0.1.0, W§1.4).
+- I2C fan controller backend (`0x1a`) with register-vs-legacy capability
+  auto-detection, matching `argonregister_checksupport` (v0.1.0, W§1.1).
+- Board auto-detection (Argon ONE vs EON) by probing for the OLED
+  (`0x3c`) and RTC (`0x51`) addresses at runtime, not an install-time
+  flag (v0.1.0, W§2.6).
 
 ### Changed
 
