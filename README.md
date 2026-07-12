@@ -4,6 +4,15 @@
 
 A rust based monitoring and management system for argon one cases of raspberry pi
 
+## Status
+
+Pre-implementation: research and UI design are done, code isn't started
+yet ([Phase 0](docs/ROADMAP.md#phase-0--research--design-done) of the
+roadmap). What exists today is the research docs, the interactive HTML
+mockups, and CI/release workflows ready for when there's a binary to
+build. See [docs/ROADMAP.md](docs/ROADMAP.md) for the v0.1.0 → v0.7.0
+implementation plan.
+
 ## Docs
 
 - [docs/ROADMAP.md](docs/ROADMAP.md) — milestone plan (v0.1.0 → v0.7.0) sequencing the research below into implementation order.
