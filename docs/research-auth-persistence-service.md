@@ -40,6 +40,34 @@ Two auth domains get conflated easily; keep them separate throughout this doc:
    done in the same transaction as the user insert — second submitter's
    transaction fails cleanly instead of creating two "first" admins.
 
+That guard covers two browsers racing *each other*, but not the broader
+exposure it was extracted from: **`/setup` is unauthenticated by
+definition, so it's a "first request wins" admin claim, open to anyone who
+can reach the box on the LAN** during the window between first boot and
+whenever the real installer actually completes setup. On a single-user
+home network this is a non-issue (you're the only one who can reach a
+freshly-flashed Pi). It stops being a non-issue the moment the device sits
+on a shared network — a household with other technical users, a shared
+apartment LAN, a dorm — where "first to visit the IP" isn't necessarily
+the person who racked the case. Two ways to close this, neither
+implemented by default since both are extra steps for what's normally a
+single-user device, but worth documenting as options:
+
+- **Bind `/setup` to `localhost` only** until the first boot completes,
+  requiring an SSH port-forward (`ssh -L 8080:localhost:80 ...`) to reach
+  it remotely — closest to zero-trust, but adds a step to the common case
+  (installer sitting on the same LAN, just wants to open a browser).
+- **Print a one-time setup token to the console/journal on first boot**
+  (`journalctl -u argonone-rs` or the physical console if one's attached),
+  required as a query param on `/setup` — cheap, doesn't block the common
+  LAN case, and matches the pattern other self-hosted tools (Jellyfin,
+  ArgoCD) use for exactly this "who gets to claim admin first" problem.
+  This is the better default of the two if one is going to be built at
+  all: recommend implementing it, gated behind nothing so it doesn't
+  complicate the LAN-only common case, but present in the docs telling
+  installers to complete setup immediately after first boot rather than
+  leaving the box sitting unconfigured on the network.
+
 ### 1.2 Password recovery — two tiers, no hints
 
 An earlier draft of this doc proposed an optional password hint. Dropped:
@@ -234,6 +262,44 @@ writes.
   moving to SSD/USB boot; this is an operational note, not something the
   Rust app can fix.
 
+### 3.4 Backup and restore
+
+Never addressed: this SQLite file is now the **sole** source of truth for
+users, roles, fan curves, and settings — the text-config-file fallback
+that made the Python version trivially backup-able (just `tar` up
+`/etc/argon*.conf`) is gone by design (§1.3 of the previous doc explicitly
+drops the config-file source-of-truth model). Losing the SD card now means
+losing accounts and tuning, not just re-running a setup script. Worth
+closing since it's a direct consequence of a design decision made
+elsewhere in this doc, not a hypothetical:
+
+- **Backup is mechanically trivial** — WAL mode (§3.3) means the live DB
+  file plus its `-wal`/`-shm` sidecars are a valid backup if copied
+  together, or (cleaner) use SQLite's own **online backup API**
+  (`sqlx` can shell out to `sqlite3 /path/to/db ".backup '/path/to/out'"`,
+  or use the `rusqlite`-style `backup` module if that dependency ends up
+  in the tree anyway for the CLI reset tool from the prior doc's §1.2) to
+  get a consistent snapshot without stopping the service. No custom
+  export format needed — it's just SQLite.
+- **What's missing is the *documented, easy* path**, not the mechanism:
+  add a CLI subcommand, `argonone-rs admin backup --output <path>`, doing
+  exactly the online-backup call above, and `argonone-rs admin restore
+  --input <path>` that stops accepting writes, swaps the file, and
+  restarts (or just documents "stop the service, replace the file, start
+  the service" if a dedicated subcommand feels like scope creep for a
+  first pass). Either way, this needs to exist and be documented in the
+  install docs, not left as "well, it's just a SQLite file, you could
+  copy it" tribal knowledge.
+- **Doesn't need to be automatic.** No cron-backup-to-cloud story is being
+  proposed here — this is a home device, and building a backup-scheduling
+  system is real scope for a fan controller. The bar is "a documented
+  single command an installer can run before an SD card swap or OS
+  upgrade," not managed backup infrastructure.
+- Cross-reference: this is the same tension as §3.3's SD-card-wear
+  discussion, opposite direction — durability of *existing* data
+  (frequent small writes) vs. recoverability of *all* data (infrequent
+  full copies). Both are real, neither substitutes for the other.
+
 ## 4. Running as a systemd service with the right privileges (Ubuntu 26.04 / Raspberry Pi)
 
 ### 4.1 Does a new Linux account need to be created?
@@ -362,6 +428,60 @@ there's a real login with session cookies, note for implementation:
   a WAN/VPN exposure. A `--tls`/config flag controlling both the listener
   and the cookie flag together is the simplest correct approach.
 
+### 4.5 Packaging as a `.deb`
+
+Both this doc and the previous one repeatedly assume a "curl-pipe-bash /
+single deb" install experience (§4.1's reasoning for picking a static
+system user over `DynamicUser=`, §1 of the prior doc's "matches this
+project's install story") without ever actually researching the packaging
+step itself. Closing that: **`cargo-deb`** is the standard tool for this —
+generates a `.deb` directly from `Cargo.toml` metadata plus a
+`[package.metadata.deb]` table, no separate packaging-repo/spec file to
+maintain in parallel with the Rust project.
+
+What the package needs to carry, mapping directly onto artifacts this pair
+of docs already designed:
+
+- **The binary itself**, built for `aarch64` (matches the CI release
+  workflow's Pi target).
+- **The systemd unit** from §4.2 — `cargo-deb` has first-class support for
+  this via `[package.metadata.deb.systemd-units]`, which auto-adds the unit
+  file as a package asset *and* generates the `postinst`/`prerm`/`postrm`
+  script fragments that enable+start the service on install and
+  stop+disable it on removal — the exact "enable at boot" requirement from
+  the original ask, without hand-writing maintainer scripts for it.
+- **The udev rule** from §4.3
+  (`/etc/udev/rules.d/60-argonone-i2c.rules`) — a plain asset entry in
+  `[package.metadata.deb]`'s `assets` list, installed to
+  `/etc/udev/rules.d/`. Needs a `udevadm control --reload-rules` in a
+  small custom `postinst` snippet (`cargo-deb` supports supplying your own
+  maintainer-script fragments alongside its generated systemd ones) so the
+  rule takes effect without a reboot.
+- **The `argonone` system user** from §4.1 Option A — also belongs in a
+  `postinst` snippet (`useradd --system ...`, idempotent — check
+  `id argonone` first so a package *upgrade* doesn't error trying to
+  recreate an existing user), run before the systemd-units script fragment
+  tries to start a service as a user that doesn't exist yet.
+- **`/boot/firmware/config.txt` I2C enablement** (`dtparam=i2c_arm=on`) —
+  deliberately **not** automated in `postinst`. Editing the bootloader
+  config unattended and possibly requiring a reboot to take effect is a
+  bigger blast-radius action than a package install should silently take;
+  keep this a documented manual step (same as `argon1.sh` already asks the
+  installer to do), with a clear message if the daemon can't reach the I2C
+  bus post-install pointing at the missing `config.txt` step.
+
+**Upgrade path**: `sqlx::migrate!()` (§3.1) already self-migrates the
+schema on the next service start, so a `.deb` upgrade is just "replace the
+binary, restart the service" — `cargo-deb`'s generated `postinst` already
+does the restart-on-upgrade as part of its systemd-units support. No
+special upgrade migration tooling needed beyond what §3.1 already
+specified; flagging that the packaging layer doesn't need to duplicate it.
+
+**Not building yet**: an actual `[package.metadata.deb]` table, since
+there's no daemon code, systemd unit file, or udev rule file checked into
+the repo to reference — this section documents the packaging *plan*, the
+config itself is real work for once those artifacts exist, not before.
+
 ## 5. Summary of concrete recommendations
 
 - Argon2id via the `argon2` crate for password hashing.
@@ -384,14 +504,28 @@ there's a real login with session cookies, note for implementation:
 - Confirm the Ubuntu-26.04-on-Pi group/udev specifics against real hardware
   before shipping — this doc's §4.3 claims are current best understanding,
   not hardware-verified for this exact release.
+- Setup-wizard exposure window: recommend a one-time console-printed setup
+  token (§1.1) rather than trusting "first request wins" on shared
+  networks; document "complete setup immediately after first boot"
+  regardless.
+- Backup/restore isn't automatic, but needs a documented `admin backup`/
+  `admin restore` CLI path (§3.4) using SQLite's online-backup API — the
+  DB is now sole source of truth, unlike the old text-config-file model.
+- Package as a `.deb` via `cargo-deb` (§4.5), bundling the systemd unit,
+  udev rule, and `argonone` user creation into generated maintainer
+  scripts — `config.txt` I2C enablement stays a documented manual step,
+  not automated in `postinst`.
 
 Sources consulted: Ubuntu/Raspberry Pi GPIO/I2C permission conventions
 ([Dr. Gutow — Ubuntu 20.04 GPIO/I2C](https://cms.gutow.uwosh.edu/Gutow/useful-chemistry-links/software-tools-and-coding/computer-and-coding-how-tos/allowing-access-to-gpio-i2c-and-spi-on-pi-under-ubuntu-20.04),
 [Robotics Back-End — Pi hardware permissions](https://roboticsbackend.com/raspberry-pi-hardware-permissions/)),
 `axum-login`/`tower-sessions` ecosystem ([axum-login on GitHub](https://github.com/maxcountryman/axum-login),
-[docs.rs/axum-login](https://docs.rs/axum-login)), and `sqlx`/`rusqlite`
+[docs.rs/axum-login](https://docs.rs/axum-login)), `sqlx`/`rusqlite`
 tradeoffs for an embedded systemd service ([Diesel vs SQLx vs SeaORM vs
-Rusqlite, 2026](https://aarambhdevhub.medium.com/rust-orms-in-2026-diesel-vs-sqlx-vs-seaorm-vs-rusqlite-which-one-should-you-actually-use-706d0fe912f3)).
+Rusqlite, 2026](https://aarambhdevhub.medium.com/rust-orms-in-2026-diesel-vs-sqlx-vs-seaorm-vs-rusqlite-which-one-should-you-actually-use-706d0fe912f3)),
+and `cargo-deb`'s systemd-unit packaging support ([cargo-deb on
+GitHub](https://github.com/kornelski/cargo-deb),
+[cargo-deb systemd.md](https://github.com/kornelski/cargo-deb/blob/main/systemd.md)).
 Ubuntu-26.04-specific group/udev behavior should still be confirmed on
 real hardware — the sourced material above is Ubuntu-on-Pi generally, not
 26.04-specific.

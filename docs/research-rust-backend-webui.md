@@ -100,6 +100,51 @@ temperature=C
   them; write a small blitter compatible with the existing byte layout
   (row-major, 1bpp, page-based like SSD1306's native format).
 
+### 1.5 Licensing: the OLED assets are not cleared for redistribution
+
+§1.4 says to ship the downloaded `.bin` fonts/backgrounds/logo as-is — that
+claim was never actually checked against whether Argon40 permits
+redistribution, and it should be revised. Checked directly: **none of the
+downloaded scripts or assets carry a license header, `LICENSE` file, or any
+copyright/redistribution statement** — `download.argon40.com` ships them as
+bare files with no metadata at all. Absence of a license is not permission;
+under default copyright, Argon40 (or whoever they licensed the artwork
+from) retains all rights to the fonts, background bitmaps, and the
+`logo1v5.bin` logo specifically — the logo in particular is a trademark/brand
+asset, a different and clearer problem than the fonts.
+
+This matters differently for the two asset classes:
+
+- **Fonts/backgrounds (`font*.bin`, `bg*.bin`)**: functional bitmap data
+  (glyph shapes, simple line-art dashboard backgrounds). Low creative
+  threshold, but still not obviously fair game to vendor into a public
+  Rust repo without asking.
+- **`logo1v5.bin` (Argon40 logo)**: don't ship this one regardless of the
+  fonts/backgrounds decision — redistributing someone else's brand mark in
+  a third-party rewrite is the clearer problem of the two, license question
+  aside.
+
+Recommended path, in order of preference:
+
+1. **Ask Argon40 directly** whether the asset files (not just the scripts)
+   can be redistributed by a community Rust rewrite — cheap to do, and the
+   scripts themselves being freely downloadable suggests they may be fine
+   with it, but that's an assumption, not a confirmed answer.
+2. **If no answer / declined**: regenerate equivalent assets from scratch —
+   the fonts are standard bitmap font sizes (6x8, 8x16, etc.) that can be
+   redrawn or sourced from a permissively-licensed bitmap font, and the
+   dashboard backgrounds are simple enough (per the blitting code in
+   `argononeoled.py`) to redraw as plain rectangles/labels rather than
+   pixel-identical recreations of Argon40's originals.
+3. **Ship no default logo screen** — trivial to drop as a screen option
+   entirely; it's one of seven rotation screens in the mockup and the least
+   functionally important one.
+4. Whatever the outcome, **don't commit the original `.bin` files to the
+   `argonone-rs` git history** while this is unresolved — treat them the
+   way the existing `argonone` research-scratch repo treats them (fetched
+   at install/build time from `download.argon40.com`, not vendored) so
+   there's no redistribution act to walk back later.
+
 ## 2. Proposed Rust architecture
 
 ### 2.1 High-level shape
@@ -166,6 +211,171 @@ with `tokio::sync::mpsc`/`watch` channels instead.
   installs and any external tooling that pokes those files.
 - Live stats pushed over WebSocket instead of only polled — enables the "real
   dashboard" the curses TUI gestured at but couldn't do remotely.
+
+### 2.5 API and WebSocket contract
+
+Never actually specified past "push live stats over WebSocket" — worth
+pinning down before implementation starts, since the daemon, the web
+server, and the frontend all need to agree on it independently.
+
+**REST, for state that changes on user action (not every few seconds):**
+
+| Method/path | Auth (per doc 2 RBAC) | Purpose |
+|---|---|---|
+| `POST /api/setup` | none (setup mode only) | create the first admin account |
+| `POST /api/login` / `POST /api/logout` | none / any | session cookie issuance |
+| `GET /api/status` | viewer+ | one-shot snapshot of everything the status strip shows — also doubles as a `/healthz` (see below) |
+| `GET/PUT /api/fan/curve/{cpu,hdd}` | viewer+ / operator+ | fan curve points |
+| `GET/PUT /api/oled/config` | viewer+ / operator+ | screen rotation, timings — 404s (not empty-state) if no OLED detected, see §2.6 |
+| `GET/PUT /api/rtc/schedule` | viewer+ / operator+ | EON wake/sleep schedule — 404s on non-EON hardware |
+| `GET/PUT /api/settings/units` | viewer+ / operator+ | C/F |
+| `GET/POST/DELETE /api/users` | admin only | user management |
+| `POST /api/users/{id}/reset-password` | admin only | Tier-1 recovery, per doc 2 §1.2 |
+
+**WebSocket, for the status-strip/dashboard values that tick every few
+seconds — one shared connection, not one socket per widget** (per doc 1
+§3.5's "avoid one-socket-per-widget" note, now made concrete):
+
+- `GET /api/ws` (upgrade). Auth rides the session cookie already on the
+  upgrade request — no separate WS auth handshake needed, `axum`'s
+  WebSocket upgrade sees the same cookie jar as any other route under
+  `axum-login`'s session layer.
+- Server → client messages are a tagged JSON enum, e.g.
+  `{"type":"stats","cpu_temp_c":46.2,"fan_pct":38,"ram_used_pct":47,"net_rx_bps":..}`,
+  `{"type":"oled_screen","name":"clock"}` (drives the live OLED preview
+  from §3.2 item 4), `{"type":"fan_state","curve":"cpu","current_pct":38}`.
+  One message type per logical update, not one giant "everything" blob on
+  every tick — lets the frontend subscribe to only what's on-screen.
+- No client → server messages over this socket — writes go through REST
+  (`PUT /api/fan/curve/...` etc.), keeping the WS connection strictly
+  server-push and the write path's auth/validation in one place (REST
+  handlers) instead of duplicated into a WS message handler too.
+- Reconnect policy: client-side exponential backoff, resubscribe on
+  reconnect; server holds no per-connection state that needs replaying (all
+  pushed values are current-snapshot, not deltas), so a dropped/reconnected
+  socket just resumes getting fresh ticks — no message-replay/sequence-number
+  design needed.
+
+**Health check**: `GET /api/status` doubles as the health endpoint (per the
+Tier-3-adjacent "no metrics endpoint" call in §3.3 — a full Prometheus
+`/metrics` exporter is out of scope, but a plain "is this thing up and is
+the hardware backend actually responding" check is not the same ask and is
+worth having). Return `200` with a `hardware: "ok" | "degraded" | "absent"`
+field reflecting the `HardwareBackend` state from §1.4, not just "process is
+running" — a daemon that's up but silently lost its I2C bus should read as
+degraded, not healthy.
+
+### 2.6 Board and hardware auto-detection at runtime
+
+The mockups gate OLED/RTC/UPS screens behind "EON only," and the API table
+above 404s EON-only routes on non-EON hardware — neither doc actually said
+how the daemon knows which board it's on. The Python install-time approach
+(`argononed.py` checks `os.path.exists("/etc/argon/argoneonoled.py")` —
+i.e. "which optional module did the installer drop on disk") doesn't
+translate to a single self-contained Rust binary that ships all
+capabilities and detects at runtime instead of install time. Runtime probe
+strategy, mirroring what `argonregister_checksupport` already does for the
+fan-register capability:
+
+1. **I2C bus + fan controller presence** (`0x1a`): probe on startup exactly
+   like the Python does — write then read back the duty-cycle register
+   (`0x80`); if the bus or device isn't there, the read/write errors and
+   the daemon falls back to the `HardwareBackend::None` no-op impl from
+   §1.4. This distinguishes "no Argon case attached at all" from "case
+   attached."
+2. **OLED presence** (`0x3c`, SSD1306): a separate I2C probe at that
+   address. This is the actual EON-vs-ONE signal — the OLED panel is EON's
+   distinguishing hardware, not a firmware flag. If it responds, enable
+   OLED routes/screens; if not, 404 them rather than showing an empty
+   state (per §3.2 item 4's existing "hide the whole section" precedent
+   for RAID).
+3. **RTC presence** (`0x51`, PCF8563): third independent I2C probe — EON
+   ships the OLED and RTC together in practice, but probing them
+   separately (rather than inferring RTC-from-OLED) means the daemon
+   doesn't silently misbehave if a future Argon board mixes capabilities
+   differently than today's two-model lineup.
+4. **UPS presence**: the Python version has no real UPS *detection* — it
+   just tails `/dev/shm/upslog.txt` if present, written by a separate
+   unresearched UPS monitoring process this project doesn't own. Flagging
+   as a genuine open question rather than guessing: is UPS status still
+   sourced from some external process's log file, or does `argonone-rs`
+   need to own UPS polling itself? Not resolved by either doc; needs an
+   answer before the Power/RTC card's "Power source: UPS · plugged" field
+   in the dashboard mockup can be backed by real data.
+
+All three I2C probes run once at startup (matching the fan-register
+capability check's existing pattern), cached for the process lifetime —
+not re-probed per-request. A case doesn't change hardware while running;
+re-probing on every dashboard load would just be latency for no benefit.
+
+### 2.7 Config writes vs. the live control loop
+
+Doc 1's architecture (§2.1) puts the fan-control loop, GPIO monitor, and
+web server in one process communicating over `tokio` channels instead of
+the Python version's inter-process `Queue` — but never actually named the
+mechanism for the one case that matters most: an operator saves a new fan
+curve from the web UI while the temperature-poll loop is mid-cycle.
+
+Concretely: `PUT /api/fan/curve/cpu` writes the new points to
+`fan_curve_points` in SQLite (doc 2 §2.3), then must get that change into
+the *running* `temp_check` loop without restarting it (a restart would
+lose the loop's in-memory hysteresis state — the "don't ramp down for 30s"
+timer from §1.4 — right as the operator is trying to test their new
+curve). Mechanism: a `tokio::sync::watch::channel<FanCurve>` — the REST
+handler sends the new curve on the channel after the DB write commits; the
+control loop's `select!` wakes on either its poll-interval timer or a
+channel update, re-reading `watch::Receiver::borrow()` for the current
+curve on each iteration. `watch` (not `mpsc`) specifically because the
+control loop only ever cares about the *latest* curve, never a queued
+history of edits — exactly the "hold most recent value" semantics `watch`
+is for.
+
+### 2.8 Fan curve safety validation
+
+Neither the fan-curve editor mockup nor either research doc stops an
+operator from saving a curve that's unsafe at the hardware level — e.g.
+0% fan at 90°C, or CPU curve with no point above 40% anywhere. The Python
+version has no such validation either (`get_fanspeed` just returns 0 if
+no configured bucket matches), so this isn't a regression, but it's worth
+closing given the web UI makes "delete all the points and save" a two-click
+mistake in a way the old sequential CLI prompts didn't as easily allow.
+
+Recommend the daemon enforce a floor **independent of stored
+configuration**, not just client-side form validation (which an API caller
+bypasses trivially): reject a `PUT` whose curve implies less than some
+minimum fan percentage (e.g. 25%, matching the Python code's own existing
+"fancfg < 25 → treat as 25%" floor in `get_fanspeed`) at any temperature at
+or above a hardcoded safety ceiling (e.g. 75°C) regardless of what points
+the operator configured. This mirrors a floor the Python code already has
+implicitly (`get_fanspeed`'s `fancfg < 25` clamp) — making it an explicit,
+documented, server-enforced invariant rather than a side effect of one
+function's rounding behavior is the actual fix, not new behavior.
+
+### 2.9 CI: closing the test and supply-chain gaps
+
+The CI workflow (`.github/workflows/ci.yml`) as originally written has two
+real gaps, found by re-reading it against what it's supposed to guarantee:
+
+- **Tests only ran in a non-blocking job.** `cargo test` ran in
+  `build-macos`, which is `continue-on-error: true` (deliberately, since
+  macOS is a secondary dev-convenience target, not the deploy target). Net
+  effect: a broken test suite could not fail CI, on any target — the
+  primary `build-raspberry-pi` job cross-compiles and can't execute
+  aarch64 test binaries on an x86_64 runner. Fixed by adding a `test` job
+  on `ubuntu-latest` at the host target: business-logic tests (fan-curve
+  math, config parsing, RBAC role checks) don't need Pi silicon to
+  validate, only the actual hardware I/O paths do (and those are behind
+  the `HardwareBackend` trait from §1.4 specifically so they're mockable
+  in tests without real I2C/GPIO).
+- **No dependency vulnerability scanning**, despite doc 2 making real
+  security-relevant crate choices (`argon2`, `tower-sessions`,
+  `axum-login`). Added a `cargo-audit` job (RustSec advisory database,
+  the canonical vulnerability check) gating the build jobs the same way
+  `fmt`/`clippy` do. `cargo-deny` (license compliance + dependency-source
+  policy, broader than `cargo-audit`'s CVE-only scope) is worth adding
+  later once the dependency list stabilizes past the current empty
+  `Cargo.toml` — introducing a license allowlist before there's anything
+  to allowlist is premature.
 
 ## 3. Web UI/UX research
 
@@ -309,39 +519,77 @@ in later:**
   speed on Y (0-100%), draggable points, snapping to whole numbers — this
   directly replaces a clunky sequential CLI prompt with a direct-manipulation
   equivalent of the same `temp=speed` pairs already in `argononed.conf`.
-- **No login-wall by default**, but support optional basic auth /
-  reverse-proxy-friendly headers — matches how most homelab tools ship
-  (network-perimeter trust model), and don't force a Postgres/user-table
-  just to gate a Pi fan controller. If auth is wanted later, an API token in
-  a header is enough.
+- **Superseded: authentication.** This section originally argued for no
+  login-wall by default. That's been reversed —
+  [`research-auth-persistence-service.md`](./research-auth-persistence-service.md)
+  designs a forced first-run admin setup and multi-user RBAC instead, and is
+  the current source of truth for auth. Left the reversal noted here rather
+  than silently deleting the old bullet, since the *reasoning* for reversal
+  (a multi-user, privileged system needs real accounts, not a shared
+  network-perimeter trust model) is useful context for anyone wondering why
+  the direction changed.
 - **Mobile-usable, not mobile-first** — primary use is a laptop/desktop
   browser on the LAN, but a phone pulled out to check "why is the fan loud"
   should work without horizontal scrolling. Responsive breakpoints, not a
   separate mobile design.
 
-### 3.5 Frontend stack recommendation
+### 3.5 Frontend stack — decided: htmx + minijinja, with one vanilla-JS island
 
-Given the "light payload, appliance-grade, one binary to deploy" constraints:
+This was left as an open question in an earlier draft of this doc. Resolved
+now, since "closing gaps" should include closing gaps in the research
+itself, not just the product surface:
 
-- **Svelte** (or SvelteKit in static-adapter mode) is the strongest fit —
-  compiles to small vanilla JS with no runtime framework overhead, which
-  matters when the server serving it is the same Pi it's monitoring.
-  Alternative: **htmx + a Rust template engine (askama/minijinja)** server-side,
-  which avoids a separate frontend build step entirely and lets `axum`
-  own rendering — genuinely worth considering here since the daemon already
-  has all the state in-process and the UI is mostly "show live data + small
-  forms," which is htmx's sweet spot. This tradeoff (SPA-lite vs
-  server-rendered+htmx) is the one open architectural question worth
-  deciding explicitly before building — recommend htmx + minijinja if you
-  want fewer moving parts and no separate JS build/toolchain to maintain
-  alongside the Rust daemon; recommend Svelte if a richer draggable
-  fan-curve editor and live-updating charts are worth a small JS build step.
-- Either way: bake the built assets into the binary with `rust-embed`, serve
-  from `axum`, push live values over one shared WebSocket topic that the
-  frontend subscribes to (avoids one-socket-per-widget).
-- Chart/curve editing: if going the Svelte route, a small dependency-free
-  canvas/SVG component is enough — no need for a full charting library for
-  one draggable line.
+**Recommendation: `axum` + `minijinja` (server-rendered HTML) + `htmx` +
+`axum-htmx`, not Svelte.** This is an established pattern (sometimes called
+the "MASH stack": minijinja/axum/sqlite/htmx), not a novel combination —
+and it directly resolves the concern that was holding the decision open.
+The stated tiebreaker for Svelte was "richer live-updating charts" — but
+htmx ships a native WebSocket extension (`hx-ws`) that does exactly the
+"tick a value in place over the shared WS connection" job from §2.5's
+protocol design via out-of-band HTML-fragment swaps, no hand-rolled
+client-side JS needed for the status strip, sparkline updates, or the OLED
+live-preview crossfade. That was the one real capability gap Svelte had
+over htmx for this project; it isn't a gap.
+
+What tips it decisively, beyond matching htmx's capabilities:
+
+- **No separate JS build/toolchain** to keep in sync with the Rust daemon
+  across releases — `minijinja` templates and `axum` handlers live in the
+  same crate, same `cargo build`, same CI job from §2.9. A Svelte build
+  step is one more thing the aarch64 cross-compile CI job (§2.9) would
+  need to reproduce for a release.
+- **The daemon already holds all the state in-process** (per §2.1) — server-side
+  rendering isn't fetching from a separate API it doesn't otherwise need;
+  it's just formatting data the daemon already has. htmx's server-renders-
+  fragments model fits that shape directly; a client-side SPA fetching its
+  own JSON from the same process it's embedded in is the extra layer.
+- **The appliance-UI precedent** (Portainer, Proxmox, TrueNAS — cited in
+  §3.1) skews server-rendered-with-light-JS, not SPA, reinforcing this isn't
+  an unusual choice for this class of tool.
+
+**The one carve-out: the fan curve editor.** Direct-manipulation dragging
+of SVG points (§3.4) is genuinely awkward to express in pure htmx —
+continuous pointer-drag isn't a request/response interaction. Recommend a
+**single small vanilla-JS island** (no framework, no build step — a
+`<script>` block or one static `.js` file, same pattern the interactive
+mockups in `docs/mockups/` already use) that owns just that one widget,
+talking to `GET/PUT /api/fan/curve/{cpu,hdd}` (§2.5) directly. Everything
+else on the page stays htmx/server-rendered. This is "mostly htmx, one
+JS island for the one truly interactive widget," not a hybrid architecture
+— the rest of the app never needs client-side state management because
+the fan curve editor doesn't either (it POSTs the final curve on save, same
+as any htmx form).
+
+Practical notes:
+
+- Bake templates + static assets into the binary (`rust-embed` or
+  `include_dir`), matching §2.1's single-binary preference.
+- `axum-htmx` (typed `HX-*` header extractors/responses) over hand-parsing
+  htmx's request headers — small, focused crate, not a framework
+  commitment.
+- No charting library needed anywhere — the sparklines and the fan curve
+  editor are both small enough for hand-authored inline SVG (per the
+  mockups), same call as before.
 
 ## 4. Migration/compat notes
 
@@ -354,3 +602,17 @@ Given the "light payload, appliance-grade, one binary to deploy" constraints:
   if anything else on the system (systemd unit `ExecStop`, the shutdown
   hook script) still shells out to the old argv contract during a
   transition period.
+
+## 5. Sources consulted (gap-closing research pass)
+
+`htmx`/`axum`/`minijinja` server-rendered stack, resolving §3.5's
+previously-open frontend decision ([axum-htmx on
+crates.io](https://crates.io/crates/axum-htmx),
+[rust-minijinja-htmx example](https://github.com/thiagovarela/rust-minijinja-htmx),
+[MASH stack writeup](https://emschwartz.me/building-a-fast-website-with-the-mash-stack-in-rust/)),
+and `cargo-audit`/`cargo-deny` for §2.9's CI supply-chain gap ([Rust supply
+chain security tools compared](https://blog.logrocket.com/comparing-rust-supply-chain-safety-tools/),
+[cargo-audit and cargo-deny recipe](https://pocketcmds.com/recipes/rust/rust-dependency-audit)).
+The OLED-asset licensing finding in §1.5 is a direct inspection of
+`~/projects/argonone/downloaded_files/` (no license headers found in any
+downloaded script or asset), not a web source.
