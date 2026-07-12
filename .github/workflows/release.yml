@@ -1,0 +1,119 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Primary target: Raspberry Pi running Ubuntu Server 26.04 LTS (aarch64) —
+  # see docs/research-auth-persistence-service.md. A release isn't cut
+  # unless this build succeeds.
+  build-raspberry-pi:
+    name: Build release binary (aarch64 — Raspberry Pi)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install aarch64 cross toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: aarch64-unknown-linux-gnu
+
+      - name: Build release binary
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo build --release --locked --target aarch64-unknown-linux-gnu
+
+      - name: Package binary
+        id: package
+        shell: bash
+        run: |
+          src="target/aarch64-unknown-linux-gnu/release/argonone-rs"
+          dest="argonone-rs-${{ github.ref_name }}-linux-aarch64"
+          cp "$src" "$dest"
+          echo "path=$dest" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-binary-raspberry-pi
+          path: ${{ steps.package.outputs.path }}
+          if-no-files-found: error
+
+  # Secondary target: macOS, for dev-workstation convenience. Not the
+  # deploy target, so it doesn't block the release if it fails — the
+  # release job proceeds on the Raspberry Pi build alone if needed.
+  build-macos:
+    name: Build release binary (macOS, secondary)
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Run unit tests against the release binary
+        run: cargo test --release --locked --all
+
+      - name: Package binary
+        id: package
+        shell: bash
+        run: |
+          src="target/release/argonone-rs"
+          dest="argonone-rs-${{ github.ref_name }}-macos-$(uname -m)"
+          cp "$src" "$dest"
+          echo "path=$dest" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-binary-macos
+          path: ${{ steps.package.outputs.path }}
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: [build-raspberry-pi, build-macos]
+    if: always() && needs.build-raspberry-pi.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download all release binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: release-binary-*
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "Release ${{ github.ref_name }}" \
+            --notes-file RELEASE_NOTES.md \
+            dist/*
