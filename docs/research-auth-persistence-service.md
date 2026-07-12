@@ -415,18 +415,113 @@ package/install script, not assumed:
   of thing that drifts between Ubuntu releases and is worth a real check
   rather than trusting this doc a version later.
 
-### 4.4 TLS / `Secure` cookies
+### 4.4 Automatic, browser-trusted HTTPS
 
-Not requested explicitly, but follows directly from "forced auth": once
-there's a real login with session cookies, note for implementation:
-- LAN-only HTTP is the common case for this class of device and is an
-  acceptable default (matches Portainer/TrueNAS's own defaults), but the
-  `Secure` cookie flag should be conditional on whether TLS is actually
-  terminated (self-signed cert generated on first run, or left to a
-  reverse proxy) — don't hardcode `Secure` on and silently break HTTP-only
-  LAN deployments, and don't hardcode it off and leak session cookies over
-  a WAN/VPN exposure. A `--tls`/config flag controlling both the listener
-  and the cookie flag together is the simplest correct approach.
+Revises an earlier, thinner version of this section that suggested a
+self-signed cert "generated on first run." That doesn't actually satisfy
+"trusted by browsers" — a self-signed cert (or a private CA the browser
+doesn't already trust) produces the standard "Your connection is not
+private" interstitial regardless of how it's generated, so it was never a
+real answer to this requirement. Researched properly below.
+
+**The hard constraint first, because it shapes every option**: a publicly
+trusted CA (Let's Encrypt included) will not issue a certificate for a
+bare private IP address or for a hostname that doesn't publicly resolve —
+this is a CA/Browser Forum baseline requirement, not a Let's Encrypt
+policy choice. A device that's *only* reachable as `192.168.1.42` or
+`argonone.local` cannot get a browser-trusted cert, full stop, no matter
+what tooling runs on it. "The web server does the work" is achievable —
+"works with zero network prerequisites" is not. The options below differ
+in *what* prerequisite they require, tiered by how well each fits this
+project's already-established audience (self-hosters, several already on
+Tailscale per doc 1 §3.1):
+
+**Option A — Tailscale-issued certs (recommended primary path).** If the
+device is already on a tailnet (a documented common case for this
+audience), Tailscale operates its own integration with Let's Encrypt for
+each node's `*.ts.net` MagicDNS name — a real, publicly resolvable name
+even though the IP behind it is only reachable over the tailnet, so it
+clears the constraint above without exposing anything to the public
+internet or requiring the user to own a domain. Mechanically: the daemon
+shells out to `tailscale cert --cert-file=<path> --key-file=<path>
+<hostname>.ts.net` — consistent with this project's existing pattern of
+shelling out to well-established external tools (`smartctl`, `mdadm`)
+rather than reimplementing them, and Tailscale doesn't expose a stable
+public Rust API for this, the CLI is the sanctioned interface. Two things
+this needs that a naive "call it once on first run" wouldn't cover:
+
+- **Detecting Tailscale is actually present and running** before
+  offering this as an option — `tailscale status --json` (or checking
+  for the `tailscaled` socket) rather than assuming; this is a UI-gating
+  decision (§2.6-style runtime detection, same pattern as
+  ONE-vs-EON hardware detection in the other doc) as much as a TLS one.
+- **Renewal is the daemon's job, not Tailscale's**, for file-based certs.
+  `tailscaled` auto-renews certs it serves directly, but a cert dumped to
+  files via `--cert-file`/`--key-file` is explicitly the caller's
+  responsibility to renew (confirmed from Tailscale's own docs) — Let's
+  Encrypt certs are 90-day. The daemon needs a background task checking
+  the cert's expiry (parse the X.509 `notAfter`, `x509-parser` crate or
+  similar) and re-running `tailscale cert` when under ~30 days remain,
+  same cadence discipline as the fan-curve hysteresis timer elsewhere in
+  this project, just for a different resource.
+
+**Option B — Let's Encrypt via `rustls-acme`, for a real domain
+(secondary/optional path).** For installers who own a domain (or a free
+dynamic-DNS name like a `duckdns.org` subdomain) pointed at their home IP,
+with port 443 forwarded to the Pi. This is the one path where "the web
+server does the work" is literal, not shelled-out: `rustls-acme` is an
+async ACME client built for exactly this, with an `axum`-compatible TLS
+acceptor — cert acquisition and renewal both happen in-process, no
+external CLI, no cron job. Two implementation notes worth having decided
+up front rather than discovered mid-build:
+
+- **Use TLS-ALPN-01, not HTTP-01**, as the challenge type —
+  `rustls-acme` defaults to and recommends TLS-ALPN-01 specifically
+  because it only needs port 443 open, not 80+443. One forwarded port
+  instead of two is a meaningfully smaller attack surface for a device
+  that also controls case power/fans over I2C.
+- **Certificate/account caching is mandatory, not an optimization** —
+  `rustls-acme`'s own docs warn that a production server must cache
+  issued certs and the ACME account (its `caches::DirCache` file-based
+  cache covers this) or risk hitting Let's Encrypt's rate limits on
+  every restart. Cache path: alongside the SQLite DB under
+  `StateDirectory=` (§3.2), not somewhere that gets wiped on upgrade.
+- This path means opening port 443 to the public internet on a home
+  router — a real, explicit trade-off to surface in the UI (§4.4's mockup
+  update below), not a silent consequence of picking "Let's Encrypt" from
+  a dropdown.
+
+**Option C — HTTP only (explicit opt-out, not a silent default).** For
+installers on a pure LAN with no Tailscale and no domain, there is no
+browser-trusted option — say so plainly in the UI rather than offering a
+self-signed cert that *looks* like it solved the problem but produces a
+browser warning anyway. If a cert is wanted for pure-LAN use despite the
+warning (e.g., a private CA installed on managed devices), that's a
+reverse-proxy/`step-ca` concern outside this project's scope, not
+something `argonone-rs` should build a private-CA-plus-trust-distribution
+system to solve.
+
+**`Secure` cookie flag**: ties directly to which of the three modes is
+active, not a separate decision — `Secure` on whenever HTTPS is actually
+terminated (Options A or B), off for Option C. No `--tls` flag needed
+distinct from the mode selection above; the mode *is* the flag.
+
+| Concern | Crate/tool | Why |
+|---|---|---|
+| Tailscale cert acquisition | shell out to `tailscale cert` (CLI) | no stable public Rust API for this; matches the project's existing external-tool pattern |
+| Cert expiry parsing (Option A renewal check) | `x509-parser` | small, dependency-light, enough to read one field (`notAfter`) |
+| Let's Encrypt ACME client (Option B) | `rustls-acme` | async, axum-compatible acceptor, TLS-ALPN-01 by default, handles acquisition + renewal + must-have caching in one crate |
+| TLS termination | `rustls` (via `rustls-acme`'s acceptor, or `axum-server`'s `tls-rustls` feature for Option A's file-based certs) | already the TLS stack implied by `tower-sessions`/`axum-login`'s dependency tree, no reason to add `native-tls`/OpenSSL alongside it |
+
+Sources: `rustls-acme` ([docs.rs](https://docs.rs/rustls-acme/latest/rustls_acme/),
+[axum ACME discussion](https://github.com/tokio-rs/axum/discussions/495)),
+Tailscale's own HTTPS docs on `tailscale cert` and its renewal caveat
+([Enabling HTTPS](https://tailscale.com/docs/how-to/set-up-https-certificates),
+[Secure Tailscale services with TLS](https://tailscale.com/blog/tls-certs)),
+`instant-acme` as the maintained lower-level ACME client `rustls-acme`
+builds on (mentioned for completeness, not needed directly unless a
+custom DNS-01 flow is built later for non-Tailscale, no-port-forward
+installs — that's real additional scope, not assumed here).
 
 ### 4.5 Packaging as a `.deb`
 
@@ -515,6 +610,16 @@ config itself is real work for once those artifacts exist, not before.
   udev rule, and `argonone` user creation into generated maintainer
   scripts — `config.txt` I2C enablement stays a documented manual step,
   not automated in `postinst`.
+- HTTPS (§4.4, revised): no self-signed-cert option presented as "secure"
+  — it isn't, browsers still warn. Tiered instead: Tailscale-issued certs
+  via `tailscale cert` as the recommended default for this audience (real
+  browser trust, zero public exposure, daemon owns renewal since
+  file-based certs aren't auto-renewed by `tailscaled`); `rustls-acme`
+  (TLS-ALPN-01) for installers with a real domain and port 443 forwarded,
+  fully in-process; plain HTTP as an explicit, clearly-labeled opt-out for
+  everyone else — a publicly-trusted cert for a private-IP-only device is
+  not achievable by any tooling, CA/Browser Forum baseline requirement,
+  not a gap in this research.
 
 Sources consulted: Ubuntu/Raspberry Pi GPIO/I2C permission conventions
 ([Dr. Gutow — Ubuntu 20.04 GPIO/I2C](https://cms.gutow.uwosh.edu/Gutow/useful-chemistry-links/software-tools-and-coding/computer-and-coding-how-tos/allowing-access-to-gpio-i2c-and-spi-on-pi-under-ubuntu-20.04),
@@ -523,9 +628,14 @@ Sources consulted: Ubuntu/Raspberry Pi GPIO/I2C permission conventions
 [docs.rs/axum-login](https://docs.rs/axum-login)), `sqlx`/`rusqlite`
 tradeoffs for an embedded systemd service ([Diesel vs SQLx vs SeaORM vs
 Rusqlite, 2026](https://aarambhdevhub.medium.com/rust-orms-in-2026-diesel-vs-sqlx-vs-seaorm-vs-rusqlite-which-one-should-you-actually-use-706d0fe912f3)),
-and `cargo-deb`'s systemd-unit packaging support ([cargo-deb on
+`cargo-deb`'s systemd-unit packaging support ([cargo-deb on
 GitHub](https://github.com/kornelski/cargo-deb),
-[cargo-deb systemd.md](https://github.com/kornelski/cargo-deb/blob/main/systemd.md)).
+[cargo-deb systemd.md](https://github.com/kornelski/cargo-deb/blob/main/systemd.md)),
+and automatic HTTPS provisioning ([rustls-acme on
+docs.rs](https://docs.rs/rustls-acme/latest/rustls_acme/), [axum ACME
+discussion](https://github.com/tokio-rs/axum/discussions/495), [Tailscale
+— Enabling HTTPS](https://tailscale.com/docs/how-to/set-up-https-certificates),
+[Tailscale — Secure services with TLS](https://tailscale.com/blog/tls-certs)).
 Ubuntu-26.04-specific group/udev behavior should still be confirmed on
 real hardware — the sourced material above is Ubuntu-on-Pi generally, not
 26.04-specific.

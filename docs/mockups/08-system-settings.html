@@ -93,6 +93,22 @@ table.sched tr:last-child td{border-bottom:none;}
 .danger-row{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--border);}
 .danger-row:last-child{border-bottom:none;}
 
+.tls-option{border:1px solid var(--border);border-radius:10px;padding:13px 15px;margin-bottom:10px;cursor:pointer;transition:border-color .15s ease, background-color .15s ease;}
+.tls-option:last-child{margin-bottom:0;}
+.tls-option.selected{border-color:var(--accent);background:var(--accent-soft);}
+.tls-option:hover:not(.selected){border-color:var(--muted);}
+.tls-option-head{display:flex;align-items:flex-start;gap:11px;}
+.tls-radio{width:16px;height:16px;border-radius:50%;border:2px solid var(--border);flex:none;margin-top:2px;position:relative;transition:border-color .15s ease;}
+.tls-option.selected .tls-radio{border-color:var(--accent);}
+.tls-option.selected .tls-radio::after{content:'';position:absolute;inset:3px;border-radius:50%;background:var(--accent);}
+.tls-option-title{font-weight:600;font-size:13.5px;display:flex;align-items:center;gap:8px;}
+.tls-option-desc{font-size:12px;color:var(--muted);margin-top:3px;line-height:1.5;}
+.tls-detail{margin:12px 0 2px 27px;padding-top:12px;border-top:1px solid var(--border);display:none;}
+.tls-option.selected .tls-detail{display:block;}
+.tls-note{display:flex;gap:9px;background:var(--warn-soft);border-radius:8px;padding:9px 11px;margin-top:12px;}
+.tls-note svg{flex:none;color:var(--warn);margin-top:1px;}
+.tls-note p{margin:0;font-size:11.5px;line-height:1.5;color:var(--text);}
+
 .toast{position:fixed;bottom:22px;right:22px;background:var(--panel);border:1px solid var(--border);border-radius:10px;
   box-shadow:var(--shadow);padding:11px 16px;font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:8px;
   transform:translateY(12px);opacity:0;pointer-events:none;transition:transform .25s cubic-bezier(.16,1,.3,1), opacity .25s ease;z-index:20;}
@@ -116,6 +132,7 @@ tr.new-row{animation:rowIn .4s cubic-bezier(.16,1,.3,1) both;}
   .card{opacity:0;animation:fadeUp .5s cubic-bezier(.16,1,.3,1) forwards;}
   .card:nth-of-type(1){animation-delay:.04s} .card:nth-of-type(2){animation-delay:.08s}
   .card:nth-of-type(3){animation-delay:.12s} .card:nth-of-type(4){animation-delay:.16s} .card:nth-of-type(5){animation-delay:.2s}
+  .card:nth-of-type(6){animation-delay:.24s}
 }
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @keyframes rowIn{from{opacity:0;background:var(--accent-soft);transform:translateY(-4px)}to{opacity:1;transform:none}}
@@ -184,6 +201,63 @@ tr.new-row{animation:rowIn .4s cubic-bezier(.16,1,.3,1) both;}
         </div>
       </div>
 
+      <div class="card" id="httpsCard">
+        <div class="card-title">HTTPS &amp; remote access</div>
+        <p class="card-sub">Encrypt the connection to this device. A browser-trusted certificate needs either a tailnet or a domain you own — see below.</p>
+
+        <div class="tls-option selected" data-mode="tailscale">
+          <div class="tls-option-head">
+            <div class="tls-radio"></div>
+            <div>
+              <div class="tls-option-title">Tailscale <span class="badge good">Recommended</span></div>
+              <div class="tls-option-desc">Automatic, browser-trusted certificate for this device's tailnet address. No ports opened to the internet.</div>
+            </div>
+          </div>
+          <div class="tls-detail">
+            <table class="kv">
+              <tr><td>Tailnet address</td><td>rpi01.tail4f2a.ts.net</td></tr>
+              <tr><td>Issuer</td><td>Let's Encrypt</td></tr>
+              <tr><td>Expires</td><td>in 62 days</td></tr>
+              <tr><td>Auto-renew</td><td><span class="badge wake">enabled</span></td></tr>
+            </table>
+            <div class="row" style="padding-top:12px;">
+              <div><div class="row-label">Certificate active</div><div class="row-sub">Issued via <code style="font-family:var(--font-mono)">tailscale cert</code>, renews automatically at 30 days remaining</div></div>
+              <button class="btn ghost">Re-issue now</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="tls-option" data-mode="domain">
+          <div class="tls-option-head">
+            <div class="tls-radio"></div>
+            <div>
+              <div class="tls-option-title">Custom domain (Let's Encrypt)</div>
+              <div class="tls-option-desc">Automatic certificate for a domain you own, pointed at this device.</div>
+            </div>
+          </div>
+          <div class="tls-detail">
+            <div class="field">
+              <label>Domain</label>
+              <input type="text" placeholder="argon.example.com" style="width:100%;padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);font-family:var(--font-mono);font-size:12.5px;">
+            </div>
+            <div class="tls-note">
+              <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 2 2 17h16z"/><path d="M10 8v4M10 14v.01"/></svg>
+              <p>Requires port 443 forwarded from your router to this device — opens it to the public internet. Prefer Tailscale unless you specifically need this.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tls-option" data-mode="off">
+          <div class="tls-option-head">
+            <div class="tls-radio"></div>
+            <div>
+              <div class="tls-option-title">HTTP only</div>
+              <div class="tls-option-desc">No encryption on this network. Traffic — including your password — is readable by anyone else on the LAN. There's no browser-trusted certificate possible without Tailscale or a domain — a self-signed one would still show a browser warning.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-title">Firmware &amp; service</div>
         <table class="kv">
@@ -218,6 +292,16 @@ function showToast(msg){
   clearTimeout(showToast._t);
   showToast._t = setTimeout(()=>toast.classList.remove('show'), 2400);
 }
+
+// HTTPS mode selection
+const modeLabels = { tailscale: 'Tailscale', domain: 'custom domain', off: 'HTTP only (unencrypted)' };
+document.querySelectorAll('.tls-option').forEach(opt => {
+  opt.addEventListener('click', () => {
+    document.querySelectorAll('.tls-option').forEach(o => o.classList.remove('selected'));
+    opt.classList.add('selected');
+    showToast(`Remote access set to ${modeLabels[opt.dataset.mode]}`);
+  });
+});
 
 // Sliding segmented control
 const seg = document.getElementById('unitsSeg');
