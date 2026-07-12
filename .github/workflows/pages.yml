@@ -1,0 +1,69 @@
+name: Deploy mockups to GitHub Pages
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "docs/mockups/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one deployment at a time; let an in-progress run finish rather
+# than cancelling it mid-upload.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build Pages artifact
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Stage mockups with a root index
+        run: |
+          mkdir -p _site
+          cp docs/mockups/*.html _site/
+          # docs/mockups/ itself has no index.html (the gallery page is
+          # 00-index.html) - add a redirect so the bare Pages URL works,
+          # without touching the source files under docs/mockups/.
+          cat > _site/index.html << 'EOF'
+          <!doctype html>
+          <html lang="en">
+          <head>
+          <meta charset="utf-8">
+          <meta http-equiv="refresh" content="0; url=00-index.html">
+          <title>argonone-rs — UI mockups</title>
+          <link rel="canonical" href="00-index.html">
+          </head>
+          <body>
+          <p>Redirecting to <a href="00-index.html">the mockup index</a>…</p>
+          </body>
+          </html>
+          EOF
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -37,6 +37,12 @@ mean starting at `v0.1.0`.
   non-blocking).
 - Release workflow: tag-triggered (`v*.*.*`), cross-compiled Pi release
   binary, GitHub Release titled `Release <tag>`.
+- GitHub Pages deployment workflow: publishes `docs/mockups/` on every
+  push to `main` that touches it, via the native Actions-artifact deploy
+  (no `gh-pages` branch to keep in sync by hand).
+- `CHANGELOG.md`, `RELEASE_NOTES.md`, and a per-tag archive under
+  `docs/releases/` — three-tier release documentation, with
+  `scripts/cut-release.sh` to archive/reset mechanically.
 - An original `argonone` OLED boot/rotation screen — `RPI` rotated 90°,
   detected Raspberry Pi model large and horizontal, `argonone` signature
   — replacing Argon40's `logo1v5.bin` splash entirely.
