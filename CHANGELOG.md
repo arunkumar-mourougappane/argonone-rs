@@ -59,6 +59,9 @@ mean starting at `v0.1.0`.
   explicit opt-out) — no self-signed-cert theater, since that doesn't
   actually satisfy "trusted by browsers."
 - Initial Rust project scaffold (`Cargo.toml`, `Cargo.lock`, `src/main.rs`).
+- `HardwareBackend` trait (`FanBackend`/`PowerButtonBackend`) with no-op
+  fallbacks, so the daemon never crashes on a Pi without the case
+  attached (v0.1.0, W§1.4).
 
 ### Changed
 
