@@ -78,6 +78,10 @@ mean starting at `v0.1.0`.
 - Fan control loop: 30s poll, temp→speed curve, hysteresis on speed
   decreases (held until sustained for a full poll window) to avoid
   audible fan flapping (v0.1.0, W§1.4).
+- Sysinfo collection: CPU% (`/proc/stat` deltas), RAM (`/proc/meminfo`),
+  CPU temp (thermal zone), disk usage (`df`), RAID status
+  (`/proc/mdstat`), and local IP (UDP-connect trick, no packets sent)
+  (v0.1.0, W§1.2).
 
 ### Changed
 
