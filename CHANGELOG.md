@@ -82,6 +82,16 @@ mean starting at `v0.1.0`.
   CPU temp (thermal zone), disk usage (`df`), RAID status
   (`/proc/mdstat`), and local IP (UDP-connect trick, no packets sent)
   (v0.1.0, W§1.2).
+- CLI: `SERVICE`/`SHUTDOWN`/`FANOFF` argv compat (matching the Python
+  daemon's exact invocation spelling) plus a new `status` one-shot
+  command (`argonstatus.py` pretty-printer parity), and the daemon
+  orchestration wiring the fan loop, button monitor, and systemd
+  `sd_notify` readiness together (v0.1.0, W§4, A§4.2).
+- systemd unit (`packaging/systemd/argonone-rs.service`), `Type=notify`.
+- v0.1.0 verified end-to-end on real Argon ONE hardware (Raspberry Pi,
+  aarch64 Ubuntu 26.04 over `ssh euclides`): `cargo build`/`clippy`/
+  `test`/`fmt` all clean natively on-device, and the no-op fallback
+  path confirmed by running without I2C/GPIO permissions.
 
 ### Changed
 

@@ -1,0 +1,17 @@
+[Unit]
+Description=Argon ONE/EON case daemon (fan control, power button)
+After=multi-user.target
+
+[Service]
+Type=notify
+ExecStart=/usr/local/bin/argonone-rs SERVICE
+Restart=on-failure
+RestartSec=5
+
+# Raw I2C + GPIO character-device access currently requires root (W§1.4).
+# Dropping to a dedicated system user via CAP_SYS_RAWIO + udev rules is
+# v0.7.0 packaging scope (docs/ROADMAP.md), not done here yet.
+User=root
+
+[Install]
+WantedBy=multi-user.target
