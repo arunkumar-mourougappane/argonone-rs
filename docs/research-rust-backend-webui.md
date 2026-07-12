@@ -97,8 +97,13 @@ temperature=C
   users notice.
 - OLED binary asset format (fonts/backgrounds) is undocumented outside these
   scripts — reuse the downloaded `.bin` files as-is rather than regenerating
-  them; write a small blitter compatible with the existing byte layout
-  (row-major, 1bpp, page-based like SSD1306's native format).
+  them (subject to §1.5's licensing caveat); write a small blitter
+  compatible with the existing byte layout. **Revising the blanket claim
+  made here originally**: "row-major, 1bpp, page-based like SSD1306's
+  native format" is accurate for the *backgrounds* only — the fonts use a
+  meaningfully different, non-obvious packing (per-character-plane layout,
+  inverted bit order relative to backgrounds). Decoded in full in §1.7;
+  don't build a blitter against this one-line description alone.
 
 ### 1.5 Licensing: the OLED assets are not cleared for redistribution
 
@@ -144,6 +149,119 @@ Recommended path, in order of preference:
    way the existing `argonone` research-scratch repo treats them (fetched
    at install/build time from `download.argon40.com`, not vendored) so
    there's no redistribution act to walk back later.
+
+### 1.6 Is reimplementing the protocol/software allowed at all?
+
+Separate question from §1.5's asset-redistribution issue: is building a
+compatible Rust rewrite — reading Argon40's published scripts to
+understand the I2C register map, GPIO pulse semantics, and (per §1.7)
+the OLED asset formats, then writing new code that does the same thing —
+itself permissible? Checked, not assumed:
+
+- **Protocol facts aren't copyrightable, regardless of source.** "Fan duty
+  cycle is I2C register `0x80`, write 0–100" is functional/interoperability
+  information — the idea/expression dichotomy that underlies *Sega v.
+  Accolade* (US) and Article 6 of the EU Software Directive's explicit
+  reverse-engineering-for-interoperability carve-out. This is also just
+  how the embedded/driver-reimplementation world normally operates.
+- **This isn't classic black-box reverse engineering anyway.** Argon40
+  publishes the Python source in the clear (`curl | bash`), unobfuscated —
+  reading published source to understand a protocol and re-expressing
+  equivalent behavior in new code is a much easier case than decompiling
+  a binary. What stays off-limits regardless: copying their code's literal
+  *expression* (comments, structure, specific phrasing) — write the Rust
+  independently, don't transliterate line-by-line.
+- **Checked Argon40's actual Terms of Service**
+  (`argon40.com/policies/terms-of-service`) directly: no reverse-engineering,
+  decompilation, or reimplementation clause exists. The closest provision
+  (§2, restricting reproduction of "the Service") governs their
+  website/store, not a software EULA restricting protocol reimplementation
+  — there isn't one.
+- **Real community precedent, on Argon40's own forum.** A thread titled
+  *"Much Better Argon One Fan Linux Software Alternative"*
+  (forum.argon40.com) is exactly this — a third-party fan-daemon
+  reimplementation, still live, unmoderated, with a community maintainer
+  (not Argon40 staff) actively participating. No staff objection anywhere
+  in it.
+- **Not checked**: patents. No evidence found either way; low apparent risk
+  for a fan-controller register interface, but genuinely unresearched, not
+  cleared. This isn't legal advice — if `argonone-rs` gets wide
+  distribution, a real IP attorney's sanity check is cheap insurance, even
+  though nothing found here suggests a real problem for a protocol-compatible
+  rewrite.
+
+### 1.7 OLED asset binary format, decoded
+
+The hardware itself is unremarkable and well-supported: the EON's OLED is
+a 128×64 **SSD1306**-controller I2C panel — the exact same controller/
+resolution combination as, e.g., Adafruit's 1.3" 128x64 OLED breakout
+(product #938). Any existing Rust `ssd1306`-crate driver targets this
+chip already; nothing custom about the display silicon. What *is*
+undocumented outside Argon40's own code is the `.bin` **asset format**,
+decoded here by direct inspection of the downloaded files plus tracing
+`argononeoled.py`'s actual read/write code (not just eyeballing rendered
+output — see the bit-order note below for why that distinction mattered).
+
+**Backgrounds (`bg*.bin`, `logo1v5.bin`) — simple, byte-exact match:**
+Each is exactly 1024 bytes = 128×64÷8, the SSD1306's native page-addressed
+framebuffer size. `oled_loadbg()` copies them verbatim into the live
+display buffer, no transformation. Within a byte, bit 0 (LSB) is the top
+pixel of that 8-row band, bit 7 (MSB) the bottom — standard SSD1306 page
+format, confirmed against `oled_writebuffer`'s `ybit = 1 << (y & 7)`.
+
+**Fonts (`font*.bin`) — same 1bpp idea, non-obvious packing:**
+
+- **256-glyph table**, indexed by raw byte value (0–255). Most fonts only
+  populate the glyphs actually used by the dashboard screens — confirmed
+  `font16x8.bin` has real (non-zero) data for only 112 of 256 slots
+  (digits, punctuation, a handful of specific letters); the rest are
+  zero-filled, not present-with-different-index.
+- **Not per-character-contiguous.** Layout is per-page-*plane*: for a
+  `charwd`-wide, `charht`-tall glyph (`numfontrow = charht/8` planes), the
+  file is `numfontrow` blocks of `256 × charwd` bytes each — all 256
+  characters' plane-0 columns first, then all 256 characters' plane-1
+  columns, etc. A glyph's column `c` in plane `p` is at
+  `p×256×charwd + charcode×charwd + c`. A naive "char N at offset
+  N×bytes_per_char" read (the obvious first guess) is wrong for any font
+  taller than 8px — verified by cross-checking this exact indexing formula
+  from `oled_writetext` against every downloaded font file's byte size,
+  which matches for 6 of 7 files exactly.
+- **`charht` is derived from `charwd`**, not independent:
+  `charht = round_up_to_8(charwd × 8 / 6)`. This is why the width/height
+  pairings in the filenames look arbitrary (`font24x16`, `font48x32`) —
+  they're not; they fall out of this formula.
+- **Bit order is inverted relative to backgrounds**: in font bytes, bit 7
+  (MSB) is the glyph's *top* row, bit 0 (LSB) the bottom — backwards from
+  the background/framebuffer convention above. Confirmed by tracing
+  `oled_writetext`'s read loop (`curbit` starts at `0x80`, shifts right as
+  `row` increases) against `oled_writebuffer`'s write logic (`ybit = 1 <<
+  (y & 7)`, i.e. row 0 → bit 0) — `oled_writetext` is doing a genuine
+  bit-order flip while blitting a font glyph into the framebuffer, not a
+  straight copy. **Caught this by tracing the code, not by rendering and
+  eyeballing the result** — a rendered `0` or `A` looks *plausible* under
+  either bit-order assumption at 6×8 resolution; only checking the actual
+  read/write source distinguished the correct one from a coincidentally-
+  readable wrong one. Worth internalizing as a method note as much as a
+  format detail: don't trust "it looks right" for reverse-engineered
+  binary formats when the ground-truth source is available to check
+  instead.
+- **One asset anomaly**: `font48x32.bin` is 65536 bytes on disk, but the
+  code's own formula (`charht=48` → 6 planes) only ever reads the first
+  49152 of them — 16KB of trailing data this specific file ships that the
+  current Python code never touches. Every other font file's size matches
+  the formula exactly; flagging as a one-off inconsistency in Argon40's
+  own asset set, not a misunderstanding of the format.
+
+Implementation note for the Rust blitter (§2.1's `oled.rs`): this means
+two distinct reader paths, not one shared "1bpp blit" routine — a
+straight background loader (§ above), and a font-plane reader that
+(a) locates the right plane/character/column via the formula above and
+(b) flips the bit order on the way into the framebuffer. Getting either
+detail wrong produces a *plausible-looking but subtly corrupted* render
+(mirrored or shifted glyphs) rather than an obvious crash — worth a unit
+test that renders a known character (e.g. `'0'` or `'A'`) against the
+downloaded fixture and asserts the exact expected bit pattern, not just
+"did it run without panicking."
 
 ## 2. Proposed Rust architecture
 
@@ -615,4 +733,16 @@ chain security tools compared](https://blog.logrocket.com/comparing-rust-supply-
 [cargo-audit and cargo-deny recipe](https://pocketcmds.com/recipes/rust/rust-dependency-audit)).
 The OLED-asset licensing finding in §1.5 is a direct inspection of
 `~/projects/argonone/downloaded_files/` (no license headers found in any
-downloaded script or asset), not a web source.
+downloaded script or asset), not a web source. §1.6's reimplementation-
+legality check is a direct read of [Argon40's Terms of
+Service](https://argon40.com/policies/terms-of-service) and the
+["Much Better Argon One Fan Linux Software
+Alternative"](https://forum.argon40.com/t/much-better-argon-one-fan-linux-software-alternative/891)
+forum thread, plus confirming `Argon40Tech/Argon40case` — the official
+GitHub mirror of these scripts — carries no declared license (checked via
+`GET /repos/Argon40Tech/Argon40case`, `license: null`) and doesn't include
+the `.bin` assets at all. §1.7's binary-format decode is direct analysis
+of the downloaded `.bin` files and `argononeoled.py`'s source, cross-checked
+against [Adafruit's SSD1306 128×64 OLED
+(#938)](https://www.adafruit.com/product/938) for the display hardware —
+no other external sources.
