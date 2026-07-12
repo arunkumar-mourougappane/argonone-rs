@@ -6,12 +6,30 @@ A rust based monitoring and management system for argon one cases of raspberry p
 
 ## Status
 
-Pre-implementation: research and UI design are done, code isn't started
-yet ([Phase 0](docs/ROADMAP.md#phase-0--research--design-done) of the
-roadmap). What exists today is the research docs, the interactive HTML
-mockups, and CI/release workflows ready for when there's a binary to
-build. See [docs/ROADMAP.md](docs/ROADMAP.md) for the v0.1.0 → v0.7.0
-implementation plan.
+[v0.1.0](docs/ROADMAP.md#v010--core-hardware-daemon-argon-one-parity) —
+core hardware daemon — is implemented and verified on real Argon ONE
+hardware (not yet tagged/released). CLI/systemd only, no web server yet:
+I2C fan control with capability auto-detection, GPIO power-button
+monitoring, sysinfo collection, board auto-detection (ONE vs EON), and
+config-file compat with the original Python daemon. Every hardware
+access goes through a `HardwareBackend` trait with a no-op fallback, so
+the daemon runs (and is testable) without the case attached. See
+[docs/ROADMAP.md](docs/ROADMAP.md) for the full v0.1.0 → v0.7.0 plan and
+[CHANGELOG.md](CHANGELOG.md) for what's landed so far.
+
+## Usage
+
+```sh
+argonone-rs service   # run the daemon (fan loop + power button monitor)
+argonone-rs status    # one-shot: board, fan, CPU/RAM/temp, disks, RAID, IP
+argonone-rs shutdown  # signal the case MCU, then power off
+argonone-rs fanoff    # turn the fan off and exit
+```
+
+The legacy uppercase spellings (`SERVICE`/`SHUTDOWN`/`FANOFF`) used by the
+original Python daemon's scripts and systemd units also work unchanged.
+A systemd unit is provided at
+[packaging/systemd/argonone-rs.service](packaging/systemd/argonone-rs.service).
 
 ## Docs
 
