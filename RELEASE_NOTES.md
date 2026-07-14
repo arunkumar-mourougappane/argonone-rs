@@ -16,25 +16,70 @@
   See docs/releases/README.md for the full archive convention.
 -->
 
-## Highlights
+# Release Notes — v0.1.0
 
-Nothing shipped as code yet — this project is in the research and design
-phase (see [docs/ROADMAP.md](docs/ROADMAP.md), Phase 0). What exists so
-far:
+## Overview
 
-- Two research docs covering the full Rust rewrite: daemon architecture,
-  hardware protocol, web UI/UX, auth, persistence, and systemd/HTTPS/
-  packaging for Ubuntu 26.04 on Raspberry Pi.
-- Nine interactive HTML mockups for every planned screen.
-- A seven-milestone roadmap (`v0.1.0` → `v0.7.0`) sequencing that
-  research into implementation order.
-- CI and tag-triggered release workflows, ready for the first real binary.
-- An original `argonone` OLED boot screen, replacing Argon40's splash
-  entirely.
+v0.1.0 is the first real release of **argonone-rs**: a Rust daemon and
+CLI for Argon ONE/EON Raspberry Pi cases, matching the core behavior of
+Argon40's original Python daemon (`argononed.py`/`argonstatus.py`). No
+web server yet — this milestone is deliberately CLI/systemd-only, the
+smallest slice that's useful and testable on real hardware. See
+[docs/ROADMAP.md](docs/ROADMAP.md) for the full v0.1.0 → v0.7.0 plan.
 
-## What's next
+## What's New
 
-`v0.1.0` is the first milestone with actual code — a CLI/systemd daemon
-with I2C fan control, GPIO power-button handling, and system-info
-collection, matching the existing Python daemon's core behavior for the
-Argon ONE case. See [docs/ROADMAP.md](docs/ROADMAP.md) for the full plan.
+- **I2C fan control** — register bus driver with automatic capability
+  detection (register-based vs. legacy byte-write), matching
+  `argonregister`'s support check.
+- **Fan control loop** — 30-second poll on a temp→speed curve, with
+  hysteresis on speed decreases (held for a full poll window) to avoid
+  audible fan flapping.
+- **GPIO power-button monitoring** — pulse-width classification into
+  reboot/shutdown/OLED-switch actions via the character-device v2 uAPI
+  (`gpiod` crate), replacing the old sysfs/RPi.GPIO paths.
+- **Board auto-detection** — Argon ONE vs. EON determined at runtime by
+  probing for the OLED (`0x3c`) and RTC (`0x51`) I2C addresses, not an
+  install-time flag.
+- **Sysinfo collection** — CPU%, RAM, CPU temperature, disk usage, RAID
+  status (`/proc/mdstat`), and local IP, surfaced via the new `status`
+  command.
+- **Config-file compatibility** — `/etc/argononed.conf`,
+  `/etc/argononed-hdd.conf`, and `/etc/argonunits.conf` parse unchanged
+  from the Python daemon's formats, so an existing install carries over
+  without reformatting.
+- **`HardwareBackend` trait with no-op fallback** — every hardware access
+  goes through this seam, so the daemon runs (and is unit-testable)
+  without the case attached.
+- **systemd integration** — `Type=notify` unit at
+  [packaging/systemd/argonone-rs.service](packaging/systemd/argonone-rs.service),
+  with `sd_notify` readiness signaling wired into the daemon.
+- **CLI** — `service`, `status`, `shutdown`, and `fanoff` subcommands; the
+  legacy uppercase spellings (`SERVICE`/`SHUTDOWN`/`FANOFF`) used by the
+  original daemon's scripts and systemd units also work unchanged.
+
+## Verified on Hardware
+
+v0.1.0 has been run end-to-end on a real Argon ONE case (Raspberry Pi,
+aarch64 Ubuntu 26.04): `cargo build`/`clippy`/`test`/`fmt` all pass
+natively on-device, and the no-op fallback path was confirmed by running
+without I2C/GPIO permissions.
+
+## Packaging
+
+- Cross-compiles cleanly to `aarch64-unknown-linux-gnu` from macOS/Linux
+  hosts (`rustup target add aarch64-unknown-linux-gnu` + a cross
+  toolchain) — see [README.md](README.md#cross-compile-for-raspberry-pi).
+- `Cargo.toml` now carries full crates.io publish metadata (license,
+  description, keywords, categories) — `cargo install argonone-rs` once
+  published.
+
+## Getting Started
+
+```sh
+cargo install argonone-rs
+argonone-rs status
+```
+
+See [README.md](README.md) for full installation, build-from-source, and
+systemd setup instructions.

@@ -2,6 +2,23 @@
 name = "argonone-rs"
 version = "0.1.0"
 edition = "2024"
+authors = ["Arunkumar Mourougappane <amouroug.dev@gmail.com>"]
+license = "MIT"
+description = "A Rust daemon and CLI for Argon ONE/EON Raspberry Pi cases — I2C fan control, GPIO power-button handling, and system monitoring."
+repository = "https://github.com/arunkumar-mourougappane/argonone-rs"
+homepage = "https://github.com/arunkumar-mourougappane/argonone-rs"
+readme = "README.md"
+keywords = ["raspberry-pi", "argon-one", "gpio", "i2c", "daemon"]
+categories = ["hardware-support", "command-line-utilities", "embedded"]
+exclude = [
+    "docs/",
+    ".github/",
+    "packaging/",
+]
+
+[[bin]]
+name = "argonone-rs"
+path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.6.1", features = ["derive"] }

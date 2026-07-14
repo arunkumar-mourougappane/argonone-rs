@@ -14,9 +14,11 @@ under [docs/releases/](docs/releases/).
 
 ## [Unreleased]
 
-Everything so far is planning/design work — no daemon code has shipped
-yet. See [docs/ROADMAP.md](docs/ROADMAP.md) for what "released" will
-mean starting at `v0.1.0`.
+## [v0.1.0] - 2026-07-13
+
+Core hardware daemon (Argon ONE parity) — CLI/systemd only, no web
+server yet. See [docs/ROADMAP.md](docs/ROADMAP.md) for what "released"
+means at this milestone and what's next.
 
 ### Added
 
@@ -92,6 +94,13 @@ mean starting at `v0.1.0`.
   aarch64 Ubuntu 26.04 over `ssh euclides`): `cargo build`/`clippy`/
   `test`/`fmt` all clean natively on-device, and the no-op fallback
   path confirmed by running without I2C/GPIO permissions.
+- Cross-compilation to `aarch64-unknown-linux-gnu` verified from a
+  non-Pi host.
+- `Cargo.toml` publish metadata (`license`, `description`, `repository`,
+  `keywords`, `categories`, explicit `[[bin]]`) so `cargo publish` works
+  cleanly; verified with `cargo publish --dry-run`.
+- README: installation section (crates.io, build from source,
+  cross-compile for Raspberry Pi) and a License section.
 
 ### Changed
 
@@ -117,4 +126,5 @@ mean starting at `v0.1.0`.
   56px-wide column, wrapping text and stranding the role tag. Verified
   the fix by rendering both themes with a headless browser.
 
-[Unreleased]: https://github.com/arunkumar-mourougappane/argonone-rs/compare/53094f5...HEAD
+[Unreleased]: https://github.com/arunkumar-mourougappane/argonone-rs/compare/v0.1.0...HEAD
+[v0.1.0]: https://github.com/arunkumar-mourougappane/argonone-rs/compare/53094f5...v0.1.0
