@@ -198,4 +198,56 @@ mod tests {
         let curve = FanCurve::parse("50=150").unwrap();
         assert_eq!(curve.0[0].speed_pct, 100);
     }
+
+    #[test]
+    fn load_or_default_falls_back_when_file_missing() {
+        let curve = FanCurve::load_or_default(Path::new("/nonexistent/argononed.conf")).unwrap();
+        assert_eq!(curve, FanCurve::default_curve());
+    }
+
+    #[test]
+    fn load_or_default_parses_existing_file() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), "65=100\n55=30\n").unwrap();
+        let curve = FanCurve::load_or_default(file.path()).unwrap();
+        assert_eq!(curve.0.len(), 2);
+    }
+
+    #[test]
+    fn load_or_default_reports_parse_errors() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), "not-a-line\n").unwrap();
+        let err = FanCurve::load_or_default(file.path()).unwrap_err();
+        assert!(err.message.contains("expected `temp=speed`"));
+        assert_eq!(err.path, file.path().display().to_string());
+    }
+
+    #[test]
+    fn config_error_display_includes_path_and_message() {
+        let err = ConfigError {
+            path: "/etc/argononed.conf".to_string(),
+            message: "boom".to_string(),
+        };
+        assert_eq!(err.to_string(), "/etc/argononed.conf: boom");
+    }
+
+    #[test]
+    fn temp_unit_defaults_to_celsius_when_file_missing() {
+        let unit = TempUnit::load_or_default(Path::new("/nonexistent/argonunits.conf"));
+        assert_eq!(unit, TempUnit::Celsius);
+    }
+
+    #[test]
+    fn temp_unit_reads_fahrenheit_from_file() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), "temperature=F\n").unwrap();
+        assert_eq!(TempUnit::load_or_default(file.path()), TempUnit::Fahrenheit);
+    }
+
+    #[test]
+    fn temp_unit_defaults_to_celsius_for_unknown_value() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), "temperature=K\n").unwrap();
+        assert_eq!(TempUnit::load_or_default(file.path()), TempUnit::Celsius);
+    }
 }

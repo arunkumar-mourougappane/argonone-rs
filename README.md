@@ -11,7 +11,7 @@ A Rust daemon and CLI for Argon ONE/EON Raspberry Pi cases — I2C fan control, 
 
 ## Status
 
-[v0.1.0](docs/ROADMAP.md#v010--core-hardware-daemon-argon-one-parity) — core hardware daemon, CLI/systemd only, no web server yet — is implemented and verified on real Argon ONE hardware, pending its first tagged release. It covers I2C fan control with capability auto-detection, GPIO power-button monitoring, sysinfo collection, board auto-detection (ONE vs EON), and config-file compat with the original Python daemon. Every hardware access goes through a `HardwareBackend` trait with a no-op fallback, so the daemon runs (and is testable) without the case attached. See [docs/ROADMAP.md](docs/ROADMAP.md) for the full v0.1.0 → v0.7.0 plan and [CHANGELOG.md](CHANGELOG.md) for what's landed so far.
+[v0.1.0](docs/ROADMAP.md#v010--core-hardware-daemon-argon-one-parity) — core hardware daemon, CLI/systemd only, no web server yet — is implemented and verified on real Argon ONE hardware. This commit is the last before the `v0.1.0` tag, the project's first release. It covers I2C fan control with capability auto-detection, GPIO power-button monitoring, sysinfo collection, board auto-detection (ONE vs EON), and config-file compat with the original Python daemon. Every hardware access goes through a `HardwareBackend` trait with a no-op fallback, so the daemon runs (and is testable) without the case attached. See [docs/ROADMAP.md](docs/ROADMAP.md) for the full v0.1.0 → v0.7.0 plan and [CHANGELOG.md](CHANGELOG.md) for what's landed so far.
 
 ## Installation
 

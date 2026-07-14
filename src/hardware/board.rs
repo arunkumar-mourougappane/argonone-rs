@@ -48,3 +48,20 @@ fn probe_addr(addr: u16) -> bool {
         Err(_) => false,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn no_fan_controller_means_no_case() {
+        assert_eq!(detect(false), Board::NoCase);
+    }
+
+    #[test]
+    fn fan_present_without_real_i2c_bus_falls_back_to_one() {
+        // Dev machines and CI runners have no /dev/i2c-1, so the OLED/RTC
+        // probe (Linux) fails closed the same way the non-Linux stub does.
+        assert_eq!(detect(true), Board::One);
+    }
+}

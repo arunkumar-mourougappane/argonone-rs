@@ -64,6 +64,10 @@ fn read_cpu_times() -> Option<CpuTimes> {
 /// CPU temperature in Celsius, from the SoC thermal zone.
 pub fn read_cpu_temp_c() -> Option<f32> {
     let raw = fs::read_to_string("/sys/class/thermal/thermal_zone0/temp").ok()?;
+    parse_cpu_temp_c(&raw)
+}
+
+fn parse_cpu_temp_c(raw: &str) -> Option<f32> {
     let millidegrees: i64 = raw.trim().parse().ok()?;
     Some(millidegrees as f32 / 1000.0)
 }
@@ -86,6 +90,10 @@ impl MemInfo {
 
 pub fn read_mem_info() -> Option<MemInfo> {
     let contents = fs::read_to_string("/proc/meminfo").ok()?;
+    parse_mem_info(&contents)
+}
+
+fn parse_mem_info(contents: &str) -> Option<MemInfo> {
     let mut total_kb = None;
     let mut available_kb = None;
     for line in contents.lines() {
@@ -119,7 +127,10 @@ pub fn read_disk_usage() -> Vec<DiskUsage> {
     else {
         return Vec::new();
     };
-    let text = String::from_utf8_lossy(&output.stdout);
+    parse_disk_usage(&String::from_utf8_lossy(&output.stdout))
+}
+
+fn parse_disk_usage(text: &str) -> Vec<DiskUsage> {
     text.lines()
         .skip(1) // header
         .filter_map(|line| {
@@ -147,6 +158,10 @@ pub fn read_raid_status() -> Vec<RaidArray> {
     let Ok(contents) = fs::read_to_string("/proc/mdstat") else {
         return Vec::new();
     };
+    parse_raid_status(&contents)
+}
+
+fn parse_raid_status(contents: &str) -> Vec<RaidArray> {
     contents
         .lines()
         .filter(|l| l.starts_with("md"))
@@ -198,6 +213,60 @@ mod tests {
             available_kb: 250,
         };
         assert_eq!(mem.used_percent(), 75.0);
+    }
+
+    #[test]
+    fn parse_cpu_temp_c_converts_millidegrees() {
+        assert_eq!(parse_cpu_temp_c("45123\n"), Some(45.123));
+    }
+
+    #[test]
+    fn parse_cpu_temp_c_rejects_garbage() {
+        assert_eq!(parse_cpu_temp_c("not-a-number"), None);
+    }
+
+    #[test]
+    fn parse_mem_info_reads_total_and_available() {
+        let mem = parse_mem_info(
+            "MemTotal:       16384000 kB\nMemFree:         1000000 kB\nMemAvailable:    8192000 kB\n",
+        )
+        .unwrap();
+        assert_eq!(mem.total_kb, 16384000);
+        assert_eq!(mem.available_kb, 8192000);
+    }
+
+    #[test]
+    fn parse_mem_info_none_when_fields_missing() {
+        assert!(parse_mem_info("MemFree: 1000 kB\n").is_none());
+    }
+
+    #[test]
+    fn parse_disk_usage_skips_header_and_parses_rows() {
+        let text = "Filesystem 1024-blocks Used Available Capacity Mounted\n\
+                     /dev/root    100000    50000  50000      50%    /\n\
+                     /dev/sda1    200000   180000  20000      90%    /data\n";
+        let disks = parse_disk_usage(text);
+        assert_eq!(disks.len(), 2);
+        assert_eq!(disks[0].mount, "/");
+        assert_eq!(disks[0].used_pct, 50);
+        assert_eq!(disks[1].mount, "/data");
+        assert_eq!(disks[1].used_pct, 90);
+    }
+
+    #[test]
+    fn parse_raid_status_reports_active_array() {
+        let mdstat = "Personalities : [raid1]\nmd0 : active raid1 sda1[0] sdb1[1]\n      1000000 blocks [2/2] [UU]\n";
+        let arrays = parse_raid_status(mdstat);
+        assert_eq!(arrays.len(), 1);
+        assert_eq!(arrays[0].name, "md0");
+        assert_eq!(arrays[0].state, "active");
+    }
+
+    #[test]
+    fn parse_raid_status_reports_inactive_array() {
+        let mdstat = "md0 : inactive sda1[0]\n";
+        let arrays = parse_raid_status(mdstat);
+        assert_eq!(arrays[0].state, "inactive");
     }
 
     #[test]

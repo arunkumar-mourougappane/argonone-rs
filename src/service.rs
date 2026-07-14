@@ -189,3 +189,53 @@ async fn shutdown_signal() {
         let _ = tokio::signal::ctrl_c().await;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hardware::{FanCapability, HwResult};
+
+    struct RecordingFan(std::sync::Mutex<Vec<&'static str>>);
+    impl hardware::FanBackend for RecordingFan {
+        fn capability(&self) -> FanCapability {
+            FanCapability::None
+        }
+        fn set_speed(&self, _percent: u8) -> HwResult<()> {
+            Ok(())
+        }
+        fn signal_poweroff(&self) -> HwResult<()> {
+            self.0.lock().unwrap().push("signal_poweroff");
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn oled_switch_event_is_a_no_op() {
+        // Not implemented until v0.2.0 — the daemon must not touch the
+        // fan/MCU or spawn any system command for this event.
+        let fan = RecordingFan(std::sync::Mutex::new(vec![]));
+        handle_button_event(ButtonEvent::OledSwitch, &fan);
+        assert!(fan.0.lock().unwrap().is_empty());
+    }
+
+    // Reboot/Shutdown aren't exercised here: handle_button_event hardcodes
+    // `systemctl reboot`/`poweroff`, which would be unsafe to actually
+    // invoke from a test (including on a real systemd CI runner). Those
+    // paths would need spawn_system_command's program to be injectable
+    // before they can be tested safely.
+
+    #[test]
+    fn spawn_system_command_success_does_not_panic() {
+        spawn_system_command("true", &[]);
+    }
+
+    #[test]
+    fn spawn_system_command_nonzero_exit_does_not_panic() {
+        spawn_system_command("false", &[]);
+    }
+
+    #[test]
+    fn spawn_system_command_missing_binary_does_not_panic() {
+        spawn_system_command("argonone-rs-definitely-not-a-real-binary", &[]);
+    }
+}

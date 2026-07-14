@@ -32,7 +32,10 @@ pub enum Command {
 /// it before handing off to `clap`, so both `argonone-rs SHUTDOWN` and
 /// `argonone-rs shutdown` work.
 pub fn parse() -> Cli {
-    let mut args: Vec<String> = std::env::args().collect();
+    parse_args(std::env::args().collect())
+}
+
+fn parse_args(mut args: Vec<String>) -> Cli {
     if let Some(first) = args.get(1) {
         let normalized = match first.to_ascii_uppercase().as_str() {
             "SERVICE" => Some("service"),
@@ -45,4 +48,29 @@ pub fn parse() -> Cli {
         }
     }
     Cli::parse_from(args)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(rest: &[&str]) -> Vec<String> {
+        std::iter::once("argonone-rs")
+            .chain(rest.iter().copied())
+            .map(String::from)
+            .collect()
+    }
+
+    #[test]
+    fn legacy_uppercase_tokens_normalize_to_subcommands() {
+        assert_eq!(parse_args(args(&["SERVICE"])).command, Command::Service);
+        assert_eq!(parse_args(args(&["SHUTDOWN"])).command, Command::Shutdown);
+        assert_eq!(parse_args(args(&["FANOFF"])).command, Command::Fanoff);
+    }
+
+    #[test]
+    fn lowercase_subcommands_pass_through_unchanged() {
+        assert_eq!(parse_args(args(&["service"])).command, Command::Service);
+        assert_eq!(parse_args(args(&["status"])).command, Command::Status);
+    }
 }

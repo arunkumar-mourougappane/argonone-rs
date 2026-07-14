@@ -140,6 +140,54 @@ mod tests {
         assert_eq!(applied, 0);
     }
 
+    struct FailingFan;
+    impl FanBackend for FailingFan {
+        fn capability(&self) -> FanCapability {
+            FanCapability::Registers
+        }
+        fn set_speed(&self, _percent: u8) -> HwResult<()> {
+            Err(crate::hardware::HwError::Bus("nope".into()))
+        }
+        fn signal_poweroff(&self) -> HwResult<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn backend_failure_keeps_previous_speed() {
+        let mut ctl = FanController::new(FanCurve::default_curve(), FixedTemp(70.0));
+        let speed = ctl.tick(&FailingFan, Instant::now());
+        assert_eq!(
+            speed, 0,
+            "set_speed failed, so current_speed stays at its initial value"
+        );
+    }
+
+    #[test]
+    fn changing_decrease_target_mid_hold_resets_the_hysteresis_window() {
+        let mut ctl = FanController::new(FanCurve::default_curve(), FixedTemp(70.0));
+        let fan = RecordingFan(std::sync::Mutex::new(vec![]));
+        let t0 = Instant::now();
+        assert_eq!(ctl.tick(&fan, t0), 100);
+
+        // Temp drops to the 55% band first...
+        ctl.temp_source = FixedTemp(62.0);
+        assert_eq!(ctl.tick(&fan, t0 + Duration::from_secs(5)), 100);
+
+        // ...then further to the 30% band before the first hold elapsed —
+        // the pending target changed, so the window should restart rather
+        // than immediately applying once 30s from t0 has passed.
+        ctl.temp_source = FixedTemp(56.0);
+        let still_held = ctl.tick(&fan, t0 + Duration::from_secs(32));
+        assert_eq!(
+            still_held, 100,
+            "target changed mid-hold, so hysteresis should restart from the new pending"
+        );
+
+        let applied = ctl.tick(&fan, t0 + Duration::from_secs(65));
+        assert_eq!(applied, 30);
+    }
+
     #[test]
     fn missing_temp_reading_holds_current_speed() {
         struct FlakyTemp(bool);

@@ -29,3 +29,22 @@ impl PowerButtonBackend for NoopPowerButton {
         rx
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn noop_fan_reports_no_capability_and_always_succeeds() {
+        let fan = NoopFan;
+        assert_eq!(fan.capability(), FanCapability::None);
+        assert!(fan.set_speed(50).is_ok());
+        assert!(fan.signal_poweroff().is_ok());
+    }
+
+    #[tokio::test]
+    async fn noop_power_button_channel_closes_immediately() {
+        let mut rx = Box::new(NoopPowerButton).spawn();
+        assert_eq!(rx.recv().await, None);
+    }
+}

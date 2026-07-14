@@ -133,3 +133,18 @@ pub fn detect() -> HardwareBackend {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detect_falls_back_to_no_op_without_real_hardware() {
+        // Dev machines and CI runners have neither an Argon case nor its
+        // I2C/GPIO devices attached, so this exercises the same no-op
+        // fallback path a bare Raspberry Pi hits (W§1.4).
+        let hw = detect();
+        assert_eq!(hw.fan.capability(), FanCapability::None);
+        assert_eq!(hw.board, board::Board::NoCase);
+    }
+}
