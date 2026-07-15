@@ -86,9 +86,10 @@ Completes Python-parity for both case models, still CLI/systemd only.
   time read, daily wake-alarm programming, and a daily sleep
   (scheduled-poweroff) check against the RTC's own clock. Done —
   `src/hardware/rtc.rs`, `/etc/argonrtc.conf`.
-- **Not yet done**: verified on real EON hardware (v0.1.0 shipped only
-  after an on-device hardware pass — v0.2.0 needs the same before it's
-  considered complete).
+- Verified on real Argon EON hardware (2026-07-14) — OLED dashboard,
+  screen rotation, splash screen, and RTC wake/sleep scheduling all
+  confirmed on-device, matching the on-hardware verification bar v0.1.0
+  shipped with.
 
 **Not in scope**: web UI for any of this — screen rotation config and RTC
 schedules stay config-file-driven until v0.3.0+.

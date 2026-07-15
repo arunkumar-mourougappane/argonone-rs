@@ -6,13 +6,23 @@ This file is the permanent, cumulative log across every version. For the prose w
 
 ## [Unreleased]
 
+## [v0.2.0] - 2026-07-14
+
+EON extras (OLED + RTC) — completes Python-parity for both case models, still CLI/systemd only, no web server. See [docs/ROADMAP.md](docs/ROADMAP.md) for what's next.
+
 ### Added
 
-- EON OLED support (v0.2.0, W§1.2, §1.7): screen-rotation state machine (`switchduration` cycling, screensaver blank-after-idle, power-button `OledSwitch` force-advance/wake), seven dashboard screens (clock, IP, CPU, RAM, storage, temp, RAID) plus an original splash screen (`RPI` rotated 90°, detected Pi model, `argonone` signature), and `/etc/argoneonoled.conf` config-file compat.
+- EON OLED support (W§1.2, §1.7): screen-rotation state machine (`switchduration` cycling, screensaver blank-after-idle, power-button `OledSwitch` force-advance/wake), seven dashboard screens (clock, IP, CPU, RAM, storage, temp, RAID) plus an original splash screen (`RPI` rotated 90°, detected Pi model, `argonone` signature), and `/etc/argoneonoled.conf` config-file compat.
 - **Blocking asset-sourcing decision resolved** (W§1.5): fonts/backgrounds are regenerated via the `embedded-graphics`/`ssd1306` crates' bundled, permissively-licensed fonts and primitive-drawn backgrounds rather than vendoring or fetching Argon40's originals — no bytes of Argon40's `.bin` assets used, and no reason to replicate their bespoke per-plane font packing since this project owns the whole render path.
-- EON RTC support (v0.2.0, W§1.1): PCF8563 register access with BCD encode/decode, daily wake-alarm programming, and a daily sleep (scheduled poweroff) check against the RTC's own clock — both driven by a new `/etc/argonrtc.conf` (`wake=`/`sleep=` `HH:MM`, `enabled=`), config-file-driven only per the v0.2.0 scope (no web UI yet).
+- EON RTC support (W§1.1): PCF8563 register access with BCD encode/decode, daily wake-alarm programming, and a daily sleep (scheduled poweroff) check against the RTC's own clock — both driven by a new `/etc/argonrtc.conf` (`wake=`/`sleep=` `HH:MM`, `enabled=`), config-file-driven only per the v0.2.0 scope (no web UI yet).
 - `argonstatus`-parity additions to the `status` command: RTC current time and configured wake/sleep schedule.
 - `HardwareBackend` gains `OledBackend`/`RtcBackend` seams with no-op fallbacks, following the same pattern as the fan/button backends — inert on Argon ONE/no-case builds.
+- v0.2.0 verified end-to-end on real Argon EON hardware: OLED dashboard, screen rotation, splash screen, and RTC wake/sleep scheduling all confirmed on-device.
+
+### Fixed
+
+- CI: `audit` job now grants `checks: write` so `rustsec/audit-check` can post its results as a GitHub check run — it previously succeeded locally but failed the job with "Resource not accessible by integration" under the default read-only `GITHUB_TOKEN`.
+- Clippy: dead-code lint allowances scoped to `not(target_os = "linux")` for items only ever constructed/called by Linux-only hardware code (fan/button/board enum variants, the OLED render/splash modules), so macOS dev builds lint clean without weakening the Linux target's (CI's actual target) strict dead-code checking.
 
 ## [v0.1.0] - 2026-07-13
 
