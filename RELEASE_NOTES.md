@@ -16,38 +16,33 @@
   See docs/releases/README.md for the full archive convention.
 -->
 
-# Release Notes — v0.1.0
+## Highlights
 
-## Overview
+Work in progress toward **v0.2.0 — EON extras (OLED + RTC)**, completing
+Python-parity for the Argon EON case. Still CLI/systemd only, no web
+server. See [docs/ROADMAP.md](docs/ROADMAP.md#v020--eon-extras-oled--rtc)
+for the full milestone scope.
 
-v0.1.0 is the first real release of **argonone-rs**: a Rust daemon and CLI for Argon ONE/EON Raspberry Pi cases, matching the core behavior of Argon40's original Python daemon (`argononed.py`/`argonstatus.py`). No web server yet — this milestone is deliberately CLI/systemd-only, the smallest slice that's useful and testable on real hardware. See [docs/ROADMAP.md](docs/ROADMAP.md) for the full v0.1.0 → v0.7.0 plan.
+- OLED dashboard: screen-rotation state machine (configurable switch
+  duration, screensaver blank-after-idle, power-button force-advance),
+  seven live screens (clock, IP, CPU, RAM, storage, temperature, RAID),
+  and an original splash screen (`RPI` rotated 90°, detected Pi model,
+  `argonone` signature) — none of it built from Argon40's original
+  assets; fonts/backgrounds are regenerated from permissively-licensed
+  crates instead.
+- RTC (PCF8563): daily wake-alarm programming and a daily sleep
+  (scheduled poweroff) check driven off the RTC's own clock, both
+  config-file driven (`/etc/argoneonoled.conf`, `/etc/argonrtc.conf`).
+- `status` command now reports RTC time and the configured wake/sleep
+  schedule alongside the existing CPU/RAM/disk/RAID/IP output.
 
-## What's New
+**Not yet done**: verified on real EON hardware — v0.1.0 didn't ship
+until that happened, and v0.2.0 needs the same before it's considered
+complete.
 
-- **I2C fan control** — register bus driver with automatic capability detection (register-based vs. legacy byte-write), matching `argonregister`'s support check.
-- **Fan control loop** — 30-second poll on a temp→speed curve, with hysteresis on speed decreases (held for a full poll window) to avoid audible fan flapping.
-- **GPIO power-button monitoring** — pulse-width classification into reboot/shutdown/OLED-switch actions via the character-device v2 uAPI (`gpiod` crate), replacing the old sysfs/RPi.GPIO paths.
-- **Board auto-detection** — Argon ONE vs. EON determined at runtime by probing for the OLED (`0x3c`) and RTC (`0x51`) I2C addresses, not an install-time flag.
-- **Sysinfo collection** — CPU%, RAM, CPU temperature, disk usage, RAID status (`/proc/mdstat`), and local IP, surfaced via the new `status` command.
-- **Config-file compatibility** — `/etc/argononed.conf`, `/etc/argononed-hdd.conf`, and `/etc/argonunits.conf` parse unchanged from the Python daemon's formats, so an existing install carries over without reformatting.
-- **`HardwareBackend` trait with no-op fallback** — every hardware access goes through this seam, so the daemon runs (and is unit-testable) without the case attached.
-- **systemd integration** — `Type=notify` unit at [packaging/systemd/argonone-rs.service](packaging/systemd/argonone-rs.service), with `sd_notify` readiness signaling wired into the daemon.
-- **CLI** — `service`, `status`, `shutdown`, and `fanoff` subcommands; the legacy uppercase spellings (`SERVICE`/`SHUTDOWN`/`FANOFF`) used by the original daemon's scripts and systemd units also work unchanged.
+## What's next
 
-## Verified on Hardware
-
-v0.1.0 has been run end-to-end on a real Argon ONE case (Raspberry Pi, aarch64 Ubuntu 26.04): `cargo build`/`clippy`/`test`/`fmt` all pass natively on-device, and the no-op fallback path was confirmed by running without I2C/GPIO permissions. The unit test suite covers 38 tests across config parsing, the fan-control hysteresis logic, hardware no-op fallbacks, and CLI argument compatibility.
-
-## Packaging
-
-- Cross-compiles cleanly to `aarch64-unknown-linux-gnu` from macOS/Linux hosts (`rustup target add aarch64-unknown-linux-gnu` + a cross toolchain) — see [README.md](README.md#cross-compile-for-raspberry-pi).
-- `Cargo.toml` now carries full crates.io publish metadata (license, description, keywords, categories) — `cargo install argonone-rs` once published.
-
-## Getting Started
-
-```sh
-cargo install argonone-rs
-argonone-rs status
-```
-
-See [README.md](README.md) for full installation, build-from-source, and systemd setup instructions.
+Once EON hardware verification closes out v0.2.0, v0.3.0 starts the web
+server: SQLite persistence, forced first-run setup, and Argon2id auth —
+infrastructure only, no feature screens yet. See
+[docs/ROADMAP.md](docs/ROADMAP.md#v030--web-foundation-persistence-auth-live-shell).

@@ -129,7 +129,7 @@ This matters differently for the two asset classes:
 - **Fonts/backgrounds (`font*.bin`, `bg*.bin`)**: functional bitmap data
   (glyph shapes, simple line-art dashboard backgrounds). Low creative
   threshold, but still not obviously fair game to vendor into a public
-  Rust repo without asking. **Still open** — no replacement built yet.
+  Rust repo without asking. **Resolved** — see below.
 - **`logo1v5.bin` ("ONE V5" splash)**: don't ship this one regardless of
   the fonts/backgrounds decision — redistributing Argon's product-name
   splash in a third-party rewrite is the clearer problem of the two,
@@ -152,28 +152,43 @@ files — one small generator (pattern proven in this doc's research: hand-
 author the wordmark, pack into the background format from §1.7) covers
 every current and future Pi version without a hardcoded asset per model.
 
-Remaining path for fonts/backgrounds, in order of preference:
+**Resolution for fonts/backgrounds: regenerated, not vendored or fetched**
+(option 2 below, chosen without waiting on option 1 — v0.2.0 needed an
+answer, not an open question). Implemented in
+`src/oled/render.rs`/`src/oled/splash.rs`: dashboard backgrounds are
+drawn as plain rectangles/labels via `embedded-graphics` primitives, and
+glyphs come from `embedded-graphics`'s own bundled, permissively-licensed
+monospace fonts (`mono_font::ascii::{FONT_6X10, FONT_9X15_BOLD}`) rather
+than a hand-ported Adafruit GFX font — same legal reasoning (permissively
+licensed, not Argon40's), less code to maintain. One consequence worth
+noting: since this project owns the whole render path end to end (real
+I2C write path via the `ssd1306` crate, not a hand-rolled SSD1306
+protocol), there was no reason to replicate §1.7's decoded per-plane/
+inverted-bit-order font packing — that decode stays here as the accurate
+record of what Argon40's own asset format does, it just isn't what
+`argonone-rs`'s blitter itself implements.
+
+Original order-of-preference notes, kept for the record:
 
 1. **Ask Argon40 directly** whether the asset files (not just the scripts)
    can be redistributed by a community Rust rewrite — cheap to do, and the
    scripts themselves being freely downloadable suggests they may be fine
-   with it, but that's an assumption, not a confirmed answer.
-2. **If no answer / declined**: regenerate equivalent assets from scratch —
-   the fonts are standard bitmap font sizes (6x8, 8x16, etc.) that can be
-   redrawn or sourced from a permissively-licensed bitmap font (Adafruit's
-   GFX library ships a BSD-licensed 5×7 font purpose-built for small OLEDs
-   — a better source than hand-drawing 256 glyphs across 7 sizes), and the
-   dashboard backgrounds are simple enough (per the blitting code in
-   `argononeoled.py`) to redraw as plain rectangles/labels rather than
-   pixel-identical recreations of Argon40's originals. Same proven
-   approach as the splash screen above, just more glyphs.
+   with it, but that's an assumption, not a confirmed answer. Not pursued
+   — regeneration didn't need to wait on it.
+2. **Regenerate equivalent assets from scratch** — the fonts are standard
+   bitmap font sizes (6x8, 8x16, etc.) that can be redrawn or sourced from
+   a permissively-licensed bitmap font, and the dashboard backgrounds are
+   simple enough (per the blitting code in `argononeoled.py`) to redraw as
+   plain rectangles/labels rather than pixel-identical recreations of
+   Argon40's originals. **This is the path taken.**
 3. Whatever the outcome, **don't commit Argon40's original `.bin` files to
-   the `argonone-rs` git history** while this is unresolved — treat them
-   the way the existing `argonone` research-scratch repo treats them
-   (fetched at install/build time from `download.argon40.com`, not
-   vendored) so there's no redistribution act to walk back later. This
-   doesn't apply to the splash screen anymore — that's an original asset,
-   safe to commit outright.
+   the `argonone-rs` git history** — treat them the way the existing
+   `argonone` research-scratch repo treats them (fetched at install/build
+   time from `download.argon40.com`, not vendored) so there's no
+   redistribution act to walk back later. Moot now: neither the splash
+   screen nor the regenerated fonts/backgrounds are sourced from Argon40
+   at all — both are original/permissively-licensed assets, safe to
+   commit outright.
 
 ### 1.6 Is reimplementing the protocol/software allowed at all?
 
