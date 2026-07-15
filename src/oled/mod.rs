@@ -10,7 +10,13 @@
 //! (W§1.7) — we own the whole rendering path end to end, so a plain
 //! `DrawTarget`-based blitter is simpler and just as correct.
 
+// `render`/`splash`'s non-test content is only ever driven by
+// `hardware::oled::I2cOled`, which is Linux-only — on a non-Linux dev
+// build there's no reachable caller for any of it outside `#[cfg(test)]`,
+// which is a real (platform-specific) dead-code fact rather than a bug.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub mod render;
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub mod splash;
 
 use std::time::{Duration, Instant};
@@ -58,7 +64,12 @@ impl Screen {
 
 /// Everything a screen might need to render itself, gathered once per tick
 /// so `render` stays free of I/O and is trivially unit-testable.
+///
+/// Fields are only *read* by `render`'s draw functions, which are
+/// themselves unreachable outside `#[cfg(test)]` on non-Linux (see the
+/// `render`/`splash` module note above) — scope the lint the same way.
 #[derive(Debug, Clone)]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub struct OledData {
     pub now_utc: time::OffsetDateTime,
     pub ip: Option<std::net::IpAddr>,

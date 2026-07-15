@@ -12,15 +12,25 @@ pub enum Board {
     /// Fan controller present, no OLED/RTC — Argon ONE.
     One,
     /// Fan controller + OLED + RTC all present — Argon EON.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     Eon,
 }
 
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 const OLED_ADDR: u16 = 0x3c;
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 const RTC_ADDR: u16 = 0x51;
 
 /// Probes bus 1 for the OLED and RTC addresses. Takes whether the fan
 /// controller was already found (from [`super::i2c::I2cFan::detect`]) so
 /// a bus-open failure there doesn't need to be repeated here.
+///
+/// `hardware::detect`'s non-Linux branch hardcodes `Board::NoCase`
+/// directly rather than calling this (there's no bus to probe at all off
+/// Linux), so this function itself goes unreachable in a non-Linux
+/// release build specifically — real, not a bug; the `#[cfg(test)]`
+/// module below still exercises it directly.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub fn detect(fan_present: bool) -> Board {
     if !fan_present {
         return Board::NoCase;

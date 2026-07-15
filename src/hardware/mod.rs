@@ -36,7 +36,13 @@ impl std::error::Error for HwError {}
 /// What generation of fan register interface the attached board speaks.
 /// Detected once via `argonregister_checksupport`-style probe (write a
 /// sentinel to reg 0x80, read it back).
+///
+/// `LegacyByteWrite`/`Registers` are only ever constructed by the
+/// Linux-only I2C probe (`i2c::I2cFan::detect`) — on a non-Linux dev
+/// build there's no code path that produces them, which is a real (if
+/// platform-specific) dead-code fact, not a bug; scope the lint to match.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub enum FanCapability {
     /// No case detected on the I2C bus at all.
     None,
@@ -62,7 +68,12 @@ pub trait FanBackend: Send + Sync {
 /// A power-button pulse-width event, as decoded from the GPIO monitor
 /// thread. Durations are approximate (10ms polling ticks), matching the
 /// Python daemon's bucketing.
+///
+/// Only the Linux-only GPIO monitor (`gpio::classify`) ever constructs
+/// these — see the `FanCapability` note above for why the lint is scoped
+/// rather than silenced outright.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub enum ButtonEvent {
     Reboot,
     Shutdown,
