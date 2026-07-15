@@ -77,6 +77,15 @@ jobs:
       - uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          # RUSTSEC-2023-0071 (rsa timing sidechannel, via sqlx-mysql):
+          # sqlx's Cargo.lock always pins versions for its mysql/postgres/
+          # sqlite driver crates so the lockfile stays valid regardless of
+          # which `--features` a given build selects, even though we only
+          # enable "sqlite" — confirmed via `cargo tree -i sqlx-mysql`
+          # (no reachable path) and no sqlx-mysql/rsa build artifacts in
+          # target/. Not exploitable here: the vulnerable code never
+          # compiles into this binary at all.
+          ignore: RUSTSEC-2023-0071
 
   # Primary target: Raspberry Pi running Ubuntu Server 26.04 LTS (aarch64) —
   # see docs/research-auth-persistence-service.md for why. Cross-compiled

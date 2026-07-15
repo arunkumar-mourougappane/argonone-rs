@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Set up admin account — argonone{% endblock %}
+{% block body %}
+<div class="center-page">
+  <div class="card">
+    <div class="brand">
+      <div class="brand-mark">A</div>
+      <div class="brand-name">argonone</div>
+    </div>
+    <h1>Create the admin account</h1>
+    <p class="lede">This is a one-time setup. The first account created here is always an admin — additional users (and their roles) can be added later.</p>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <form method="post" action="/setup">
+      <div class="field">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="new-password" required minlength="8">
+      </div>
+      <div class="field">
+        <label for="password_confirm">Confirm password</label>
+        <input type="password" id="password_confirm" name="password_confirm" autocomplete="new-password" required minlength="8">
+      </div>
+      <button type="submit" class="btn">Create admin account</button>
+    </form>
+    <p class="note">This device is on your local network. Complete setup right away so nobody else on the network claims the first admin account.</p>
+  </div>
+</div>
+{% endblock %}

@@ -1,12 +1,16 @@
+mod admin;
+mod auth;
 mod cli;
 mod config;
+mod db;
 mod fan;
 mod hardware;
 mod oled;
 mod service;
 mod sysinfo;
+mod web;
 
-use cli::Command;
+use cli::{AdminCommand, Command};
 
 #[tokio::main]
 async fn main() {
@@ -23,5 +27,8 @@ async fn main() {
         Command::Shutdown => service::shutdown_once(),
         Command::Fanoff => service::fanoff_once(),
         Command::Status => service::print_status(),
+        Command::Admin { command } => match command {
+            AdminCommand::ResetPassword { username } => admin::reset_password(&username).await,
+        },
     }
 }

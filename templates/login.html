@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Log in — argonone{% endblock %}
+{% block body %}
+<div class="center-page">
+  <div class="card">
+    <div class="brand">
+      <div class="brand-mark">A</div>
+      <div class="brand-name">argonone</div>
+    </div>
+    <h1>Log in</h1>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <form method="post" action="/login">
+      <div class="field">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" autocomplete="username" required autofocus>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="btn">Log in</button>
+    </form>
+    <p class="note">Forgot your password? Ask an administrator, or with shell access on the device run <code>argonone-rs admin reset-password</code>.</p>
+  </div>
+</div>
+{% endblock %}

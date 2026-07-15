@@ -1,0 +1,51 @@
+//! `GET /api/ws` (W§2.5): one shared connection pushing tagged-JSON
+//! `stats`/`fan_state` messages — server-push only, no client-to-server
+//! messages in this contract (writes go through REST once they exist).
+
+use super::AppState;
+use axum::extract::State;
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::response::IntoResponse;
+use serde_json::json;
+
+pub async fn handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| stream(socket, state))
+}
+
+async fn stream(mut socket: WebSocket, state: AppState) {
+    let mut cpu = crate::sysinfo::CpuUsage::new();
+    let mut interval = tokio::time::interval(super::WS_TICK_INTERVAL);
+
+    loop {
+        tokio::select! {
+            _ = interval.tick() => {
+                let stats = json!({
+                    "type": "stats",
+                    "cpu_pct": cpu.sample_percent(),
+                    "cpu_temp_c": crate::sysinfo::read_cpu_temp_c(),
+                    "ram_used_pct": crate::sysinfo::read_mem_info().map(|m| m.used_percent()),
+                });
+                if socket.send(Message::Text(stats.to_string().into())).await.is_err() {
+                    return;
+                }
+
+                let fan_state = json!({
+                    "type": "fan_state",
+                    "curve": "cpu",
+                    "current_pct": *state.fan_speed.borrow(),
+                });
+                if socket.send(Message::Text(fan_state.to_string().into())).await.is_err() {
+                    return;
+                }
+            }
+            msg = socket.recv() => {
+                // No client -> server messages in this contract (W§2.5);
+                // anything else (close frame, error, stream end) means
+                // the connection is done.
+                if !matches!(msg, Some(Ok(_))) {
+                    return;
+                }
+            }
+        }
+    }
+}

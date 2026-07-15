@@ -25,9 +25,33 @@ impl crate::fan::TempSource for SystemCpuTemp {
     }
 }
 
+/// `/var/lib/argonone-rs/argonone.db` under systemd's `StateDirectory=`
+/// (A§3.2) by default; overridable for local dev/testing where that path
+/// isn't creatable (or shouldn't be shared with a real install).
+pub(crate) fn db_path() -> std::path::PathBuf {
+    std::env::var("ARGONONE_DB_PATH")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from(crate::db::DEFAULT_DB_PATH))
+}
+
+/// `0.0.0.0:8080` by default — no HTTPS until v0.6.0 (A§4.4), so this is
+/// plain HTTP, meant for a trusted LAN.
+fn bind_addr() -> String {
+    std::env::var("ARGONONE_BIND").unwrap_or_else(|_| "0.0.0.0:8080".to_string())
+}
+
 pub async fn run() {
     let mut hw = hardware::detect();
     tracing::info!(board = ?hw.board, "argonone-rs daemon starting");
+
+    let db_path = db_path();
+    let pool = match crate::db::connect(&db_path).await {
+        Ok(pool) => pool,
+        Err(e) => {
+            tracing::error!(error = %e, path = %db_path.display(), "failed to open database, exiting");
+            std::process::exit(1);
+        }
+    };
 
     let curve = match FanCurve::load_or_default(Path::new(ConfigPaths::CPU_CURVE)) {
         Ok(curve) => curve,
@@ -42,6 +66,23 @@ pub async fn run() {
 
     apply_rtc_wake_alarm(hw.rtc.as_mut(), rtc_schedule);
     let mut rtc_last_sleep_trigger: Option<(u16, u8, u8, u8, u8)> = None;
+
+    let (fan_speed_tx, fan_speed_rx) = tokio::sync::watch::channel(0u8);
+    let bind_addr = bind_addr();
+    let listener = match tokio::net::TcpListener::bind(&bind_addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            tracing::error!(error = %e, addr = %bind_addr, "failed to bind web server, exiting");
+            std::process::exit(1);
+        }
+    };
+    let router = crate::web::build_router(pool, hw.board, fan_speed_rx).await;
+    tracing::info!(addr = %bind_addr, "web server listening");
+    tokio::spawn(async move {
+        if let Err(e) = axum::serve(listener, router).await {
+            tracing::error!(error = %e, "web server task ended unexpectedly");
+        }
+    });
 
     let mut button_rx = hw.button.spawn();
     let mut fan_controller = FanController::new(curve, SystemCpuTemp);
@@ -63,7 +104,8 @@ pub async fn run() {
     loop {
         tokio::select! {
             _ = poll.tick() => {
-                fan_controller.tick(hw.fan.as_ref(), Instant::now());
+                let speed = fan_controller.tick(hw.fan.as_ref(), Instant::now());
+                fan_speed_tx.send_replace(speed);
                 if let Some(sleep_at) = rtc_schedule.sleep {
                     check_rtc_sleep_schedule(
                         hw.rtc.as_mut(),

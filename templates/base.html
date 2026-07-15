@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}argonone{% endblock %}</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+:root{
+  --bg:#F4F5F9; --panel:#FFFFFF; --border:#DFE1EA; --text:#1B1E27; --muted:#5B6172;
+  --accent:#6857E8; --accent-soft:#EDEAFB;
+  --good:#2E9C63; --good-soft:#E4F6EC; --warn:#B5791C; --warn-soft:#FBF0DC; --crit:#C43450; --crit-soft:#FBE4E9;
+  --shadow:0 1px 2px rgba(20,22,30,.06), 0 8px 24px rgba(20,22,30,.05);
+  --font-ui:'IBM Plex Sans',-apple-system,"Segoe UI",sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){ :root{ --bg:#0C0E13; --panel:#14171F; --border:#262B36; --text:#E7E9F0; --muted:#8A90A3;
+  --accent:#8B7FFF; --accent-soft:rgba(139,127,255,.14); --good:#4FBE86; --good-soft:rgba(79,190,134,.14);
+  --warn:#E3A83F; --warn-soft:rgba(227,168,63,.14); --crit:#E5677A; --crit-soft:rgba(229,103,122,.14);
+  --shadow:0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.4); } }
+*{box-sizing:border-box;}
+body{margin:0;min-height:100vh;background:var(--bg);color:var(--text);font-family:var(--font-ui);}
+a{color:var(--accent);}
+.center-page{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px;}
+.card{width:100%;max-width:440px;background:var(--panel);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:36px 32px 28px;}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:24px;}
+.brand-mark{width:30px;height:30px;border-radius:8px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font-mono);font-weight:600;font-size:14px;flex:none;}
+.brand-name{font-weight:600;font-size:15px;letter-spacing:.01em;}
+h1{font-size:21px;margin:0 0 8px;font-weight:700;}
+.lede{color:var(--muted);font-size:13.5px;line-height:1.55;margin:0 0 22px;}
+.field{margin-bottom:16px;}
+label{display:block;font-size:12.5px;font-weight:600;margin-bottom:6px;}
+input[type=text],input[type=password]{
+  width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);
+  background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13.5px;outline:none;}
+input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+.btn{width:100%;padding:11px 14px;border-radius:8px;border:none;background:var(--accent);color:#fff;
+  font-family:var(--font-ui);font-weight:600;font-size:14px;cursor:pointer;margin-top:6px;}
+.btn:hover{filter:brightness(1.06);}
+.error{background:var(--crit-soft);color:var(--crit);border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:16px;}
+.note{color:var(--muted);font-size:12.5px;margin-top:18px;line-height:1.5;}
+
+.shell{display:flex;min-height:100vh;}
+.sidebar{width:220px;flex:none;background:var(--panel);border-right:1px solid var(--border);padding:20px 16px;display:flex;flex-direction:column;gap:4px;}
+.sidebar nav{display:flex;flex-direction:column;gap:2px;margin-top:20px;flex:1;}
+.sidebar a{display:block;padding:9px 10px;border-radius:8px;color:var(--text);text-decoration:none;font-size:13.5px;}
+.sidebar a:hover{background:var(--accent-soft);}
+.sidebar form{margin-top:auto;}
+.sidebar .btn{background:transparent;border:1px solid var(--border);color:var(--text);}
+main{flex:1;padding:24px 32px;}
+.status-strip{display:flex;gap:24px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 18px;margin-bottom:24px;font-family:var(--font-mono);font-size:13px;}
+.status-strip .stat-label{color:var(--muted);margin-right:6px;}
+.role-badge{display:inline-block;background:var(--accent-soft);color:var(--accent);border-radius:6px;padding:2px 8px;font-size:11px;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:.05em;}
+</style>
+</head>
+<body>
+{% block body %}{% endblock %}
+<script src="/static/htmx.min.js"></script>
+<script src="/static/htmx-ext-ws.js"></script>
+</body>
+</html>

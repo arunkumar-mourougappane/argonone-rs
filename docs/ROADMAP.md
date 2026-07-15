@@ -106,22 +106,42 @@ works end-to-end.
 - SQLite schema + `sqlx::migrate!()` embedded migrations: `users`,
   `settings`, `fan_curve_points`, `audit_log` (A§2.3) — WAL mode,
   `synchronous=NORMAL` (A§3.3), file under systemd `StateDirectory=`
-  (A§3.2)
-- Forced first-run setup wizard, gated on empty `users` table (A§1.1)
+  (A§3.2). Done — `src/db/mod.rs`, `migrations/0001_init.sql`.
+- Forced first-run setup wizard, gated on empty `users` table (A§1.1),
+  including the singleton-INSERT race guard from step 5. Done —
+  `src/web/setup.rs`.
 - Argon2id auth, `axum-login` + `tower-sessions` (SQLite-backed) sessions,
-  three-role RBAC (`admin`/`operator`/`viewer`) (A§2)
-- Password recovery: admin-issued reset from Users page, CLI fallback for
-  the no-admin-can-login case (A§1.2) — Users *page* itself is v0.5.0,
-  but the reset mechanism and CLI subcommand land here since auth depends
-  on it existing
+  three-role RBAC (`admin`/`operator`/`viewer`) (A§2). Done —
+  `src/auth/mod.rs`.
+- Password recovery: admin-issued reset (`POST
+  /api/users/{id}/reset-password`, admin-only), CLI fallback
+  (`argonone-rs admin reset-password --username <u>`) for the
+  no-admin-can-login case (A§1.2) — Users *page* itself is still v0.5.0,
+  the reset mechanism and CLI subcommand are done — `src/web/users.rs`,
+  `src/admin.rs`.
 - `axum` + `minijinja` + `htmx` server shell (W§3.5) — bare authenticated
-  layout (sidebar, status strip) with no real content pages yet
-  (mockups already built: `03-dashboard.html` etc.)
+  layout (sidebar, status strip), no real content pages yet. Done —
+  `src/web/dashboard.rs`, `templates/`. `htmx`/`htmx-ext-ws` vendored
+  from upstream releases (`assets/`, see `assets/VENDORED.md`) rather
+  than CDN-loaded, matching the single-binary deploy story.
 - WebSocket contract live: one shared connection, `stats`/`fan_state`
-  message types (W§2.5) — status strip actually ticks, proving the
-  pipe, even though nothing is configurable yet
-- `GET /api/status` health endpoint (W§2.5)
-- `must_change_pw` forced-change flow, failed-login throttle (A§2.2)
+  message types (W§2.5) — status strip actually ticks over
+  `htmx-ext-ws`. Done — `src/web/ws.rs`.
+- `GET /api/status` health endpoint (W§2.5), auth-gated per the API
+  table (`viewer+`). Done — `src/web/status.rs`.
+- `must_change_pw` forced-change flow, failed-login throttle (A§2.2:
+  5 attempts, 15-minute lockout). Done — `src/web/login.rs`,
+  `src/auth/mod.rs`.
+- systemd unit gains `StateDirectory=argonone-rs` for the SQLite file
+  (A§3.2, A§4.2); the `argonone` service-account privilege drop
+  (A§4.1) stays deferred to v0.7.0's `.deb` maintainer scripts, per the
+  roadmap's original split — `User=root` still, documented inline.
+- **Not yet done**: verified on real hardware (both v0.1.0 and v0.2.0
+  shipped only after an on-device pass) — v0.3.0 has been verified
+  end-to-end against the compiled binary (setup/login/session/
+  must_change_pw/lockout/WebSocket/admin-reset/CLI-reset all exercised
+  manually plus in an automated route-test suite), but not yet run on
+  the actual Raspberry Pi target.
 
 **Not in scope**: HTTPS (v0.6.0), fan curve editing, any settings screens.
 

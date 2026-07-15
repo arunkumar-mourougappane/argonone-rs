@@ -11,7 +11,9 @@ A Rust daemon and CLI for Argon ONE/EON Raspberry Pi cases — I2C fan control, 
 
 ## Status
 
-[v0.2.0](docs/ROADMAP.md#v020--eon-extras-oled--rtc) — EON extras (OLED dashboard + RTC wake/sleep scheduling), completing Python-parity for both case models — is released and verified on real Argon EON hardware. [v0.1.0](docs/ROADMAP.md#v010--core-hardware-daemon-argon-one-parity) (core hardware daemon: I2C fan control, GPIO power-button monitoring, sysinfo collection, board auto-detection) shipped first and remains verified on real Argon ONE hardware. Both are CLI/systemd-only — no web server yet. Every hardware access goes through a `HardwareBackend` trait with a no-op fallback, so the daemon runs (and is testable) without the case attached. See [docs/ROADMAP.md](docs/ROADMAP.md) for the full v0.1.0 → v0.7.0 plan and [CHANGELOG.md](CHANGELOG.md) for what's landed so far.
+[v0.2.0](docs/ROADMAP.md#v020--eon-extras-oled--rtc) (EON extras: OLED dashboard + RTC wake/sleep scheduling) and [v0.1.0](docs/ROADMAP.md#v010--core-hardware-daemon-argon-one-parity) (core hardware daemon: I2C fan control, GPIO power-button monitoring, sysinfo collection, board auto-detection) are released and verified on real Argon ONE/EON hardware. Every hardware access goes through a `HardwareBackend` trait with a no-op fallback, so the daemon runs (and is testable) without the case attached.
+
+[v0.3.0](docs/ROADMAP.md#v030--web-foundation-persistence-auth-live-shell) — the web foundation (SQLite persistence, forced first-run admin setup, Argon2id auth with three-role RBAC, a bare authenticated `htmx`/`minijinja` shell, and a live WebSocket status strip) — is implemented and covered by an automated route-test suite plus a manual end-to-end pass, but **not yet verified on real Raspberry Pi hardware**, so it isn't tagged/released yet. See [docs/ROADMAP.md](docs/ROADMAP.md) for the full v0.1.0 → v0.7.0 plan and [CHANGELOG.md](CHANGELOG.md) for what's landed so far.
 
 ## Installation
 
@@ -50,20 +52,26 @@ argonone-rs fanoff    # turn the fan off and exit
 
 The legacy uppercase spellings (`SERVICE`/`SHUTDOWN`/`FANOFF`) used by the original Python daemon's scripts and systemd units also work unchanged. A systemd unit is provided at [packaging/systemd/argonone-rs.service](packaging/systemd/argonone-rs.service).
 
-On an Argon EON, the daemon also drives the OLED dashboard (screen rotation configured via `/etc/argoneonoled.conf`: `switchduration`, `screensaver`, `screenlist`, `enabled`) and the RTC wake/sleep schedule (`/etc/argonrtc.conf`: `enabled`, `wake=HH:MM`, `sleep=HH:MM`) — both config-file only for now, no web UI yet. On an Argon ONE or a bare Pi with no case, these are no-ops.
+On an Argon EON, the daemon also drives the OLED dashboard (screen rotation configured via `/etc/argoneonoled.conf`: `switchduration`, `screensaver`, `screenlist`, `enabled`) and the RTC wake/sleep schedule (`/etc/argonrtc.conf`: `enabled`, `wake=HH:MM`, `sleep=HH:MM`) — both config-file only for now, no settings *screen* yet. On an Argon ONE or a bare Pi with no case, these are no-ops.
+
+`argonone-rs service` also starts the web server (default `0.0.0.0:8080`, SQLite state at `/var/lib/argonone-rs/argonone.db` — both overridable via `ARGONONE_BIND`/`ARGONONE_DB_PATH` for local dev). First visit forces a one-time admin account setup wizard; after that it's a normal login. Recovery, if the only admin gets locked out:
+
+```sh
+argonone-rs admin reset-password --username <name>
+```
 
 ## Docs
 
 - [docs/ROADMAP.md](docs/ROADMAP.md) — milestone plan (v0.1.0 → v0.7.0).
 - [CHANGELOG.md](CHANGELOG.md) — cumulative log of every change, by version. [RELEASE_NOTES.md](RELEASE_NOTES.md) covers just the current unreleased cycle; past releases are archived under [docs/releases/](docs/releases/README.md).
 
-### Planned / research (not yet implemented)
+### Planned / research
 
-Everything below describes the future web UI (v0.3.0+), not the current CLI/systemd daemon:
+The web UI's *foundation* (setup, login, session/RBAC, a bare dashboard shell) is implemented as of v0.3.0 — see Usage above. Everything else described below is still ahead (feature screens start at v0.4.0):
 
 - [docs/research-rust-backend-webui.md](docs/research-rust-backend-webui.md) — what the existing Argon40 Python stack does, proposed Rust daemon architecture, and web UI/UX research (target: homelab/NAS self-hosters).
 - [docs/research-auth-persistence-service.md](docs/research-auth-persistence-service.md) — forced first-run admin setup, multi-user RBAC, SQLite persistence, and systemd service install for Ubuntu 26.04 on Raspberry Pi.
-- [docs/mockups/](docs/mockups/00-index.html) — interactive HTML mockups of the web UI (setup, login, dashboard, fan curve editor, storage/RAID, OLED display, users, system settings). Open `00-index.html` in a browser to start.
+- [docs/mockups/](docs/mockups/00-index.html) — interactive HTML mockups of the full web UI (setup, login, dashboard, fan curve editor, storage/RAID, OLED display, users, system settings) — the target design; only setup/login/a bare dashboard are real so far. Open `00-index.html` in a browser to start.
 
 ## License
 

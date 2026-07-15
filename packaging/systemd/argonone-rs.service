@@ -1,6 +1,7 @@
 [Unit]
-Description=Argon ONE/EON case daemon (fan control, power button)
-After=multi-user.target
+Description=Argon ONE/EON case daemon (fan control, power button, web UI)
+After=multi-user.target network-online.target
+Wants=network-online.target
 
 [Service]
 Type=notify
@@ -8,9 +9,18 @@ ExecStart=/usr/local/bin/argonone-rs SERVICE
 Restart=on-failure
 RestartSec=5
 
+# SQLite database (users/settings/fan curves/audit log, A§2.3) lives here.
+# systemd creates this directory (owned by whatever User= below runs as)
+# before every start — no manual `mkdir`/`chown` needed in an install
+# script (A§3.2, A§4.2).
+StateDirectory=argonone-rs
+StateDirectoryMode=0750
+
 # Raw I2C + GPIO character-device access currently requires root (W§1.4).
-# Dropping to a dedicated system user via CAP_SYS_RAWIO + udev rules is
-# v0.7.0 packaging scope (docs/ROADMAP.md), not done here yet.
+# Dropping to a dedicated system user (A§4.1's "Option A": a static
+# `argonone` system account, `SupplementaryGroups=dialout` for I2C/GPIO
+# access) needs that account to actually exist first — that's `.deb`
+# maintainer-script scope (v0.7.0, docs/ROADMAP.md), not done here yet.
 User=root
 
 [Install]

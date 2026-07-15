@@ -11,10 +11,11 @@ pub struct Cli {
     pub command: Command,
 }
 
-#[derive(Subcommand, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub enum Command {
-    /// Run the daemon: fan control loop + power-button monitor. This is
-    /// what the systemd unit invokes.
+    /// Run the daemon: fan control loop, power-button monitor, EON
+    /// OLED/RTC, and the web server. This is what the systemd unit
+    /// invokes.
     Service,
     /// One-shot: signal the case MCU that the Pi is shutting down, then
     /// invoke the system shutdown. Matches `argononed.py SHUTDOWN`.
@@ -24,6 +25,23 @@ pub enum Command {
     /// One-shot: print current stats (CPU%, RAM, temp, disks, RAID, IP)
     /// and exit. Parity with `argonstatus.py`'s pretty-printer.
     Status,
+    /// User-account administration, run directly against the database.
+    Admin {
+        #[command(subcommand)]
+        command: AdminCommand,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
+pub enum AdminCommand {
+    /// Reset a user's password directly, bypassing the web layer
+    /// entirely — the "no admin can log in" fallback (A§1.2 Tier 2).
+    /// Prints a generated temporary password to stdout; the user is
+    /// forced to change it on next login.
+    ResetPassword {
+        #[arg(long)]
+        username: String,
+    },
 }
 
 /// The legacy Python daemon was invoked as bare uppercase tokens
