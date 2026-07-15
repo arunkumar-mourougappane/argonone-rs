@@ -66,20 +66,29 @@ files. Deliberately deferred, not forgotten.
 
 Completes Python-parity for both case models, still CLI/systemd only.
 
-- OLED framebuffer + blitter: backgrounds (verbatim SSD1306 page format)
-  and fonts (per-plane layout, inverted bit order) per the fully decoded
-  format (W§1.7)
+- **Blocking decision resolved**: fonts/backgrounds are *not* Argon40's
+  originals, vendored or fetched — regenerated instead from the
+  `embedded-graphics`/`ssd1306` crates' bundled, permissively-licensed
+  fonts and primitive-drawn (rects/labels) dashboard backgrounds (W§1.5's
+  proposed path). Since this project owns the whole render path end to
+  end, there's no reason to replicate Argon40's bespoke per-plane font
+  packing (W§1.7) — that decode remains documented for reference, but the
+  actual blitter is a plain `embedded-graphics::DrawTarget` implementation
+  (`src/oled/render.rs`), driving the real SSD1306 panel via the `ssd1306`
+  crate over I2C. Done.
 - Screen rotation state machine: switch duration, screensaver blank-
-  after-idle (W§1.2)
-- **Blocking decision before this ships**: fonts/backgrounds sourcing —
-  Argon40's originals fetched at install time (not vendored, per W§1.5)
-  as an interim measure, or regenerated from Adafruit's BSD-licensed GFX
-  font (W§1.5's proposed path, proof-of-concept already done this
-  session). Pick one before writing the blitter against it.
-- Original `argonone` splash screen (`RPI` rotated + detected Pi model +
-  signature) — asset already designed, just needs encoding + wiring to
-  board detection (W§1.5 resolution)
-- RTC register access (PCF8563) + wake/sleep scheduling (W§1.1)
+  after-idle, power-button `OledSwitch` force-advance/wake (W§1.2). Done
+  — `src/oled/mod.rs::Rotation`.
+- Original `argonone` splash screen (`RPI` rotated 90° + detected Pi
+  model + signature), wired to board detection (W§1.5 resolution). Done
+  — `src/oled/splash.rs`.
+- RTC register access (PCF8563) + wake/sleep scheduling (W§1.1): BCD
+  time read, daily wake-alarm programming, and a daily sleep
+  (scheduled-poweroff) check against the RTC's own clock. Done —
+  `src/hardware/rtc.rs`, `/etc/argonrtc.conf`.
+- **Not yet done**: verified on real EON hardware (v0.1.0 shipped only
+  after an on-device hardware pass — v0.2.0 needs the same before it's
+  considered complete).
 
 **Not in scope**: web UI for any of this — screen rotation config and RTC
 schedules stay config-file-driven until v0.3.0+.
@@ -200,5 +209,6 @@ Turns "a binary that works" into "a thing someone installs."
 
 - `cargo-audit` / CI already blocks on every push, not scheduled per
   version
-- Fonts/backgrounds licensing resolution (W§1.5) blocks v0.2.0
-  specifically, called out there rather than as its own line item
+- Fonts/backgrounds licensing (W§1.5) — resolved for v0.2.0 (regenerated
+  from permissively-licensed crates, not Argon40's assets), noted there
+  rather than as its own line item

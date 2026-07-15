@@ -184,6 +184,24 @@ fn parse_raid_status(contents: &str) -> Vec<RaidArray> {
         .collect()
 }
 
+/// Board model string, for the OLED splash screen's version label (W§1.5's
+/// resolution). Sourced from the device tree rather than `/proc/cpuinfo`'s
+/// `Revision` code table, which would need a lookup table to decode.
+pub fn read_pi_model() -> Option<String> {
+    for path in [
+        "/proc/device-tree/model",
+        "/sys/firmware/devicetree/base/model",
+    ] {
+        if let Ok(raw) = fs::read_to_string(path) {
+            let model = raw.trim_end_matches('\0').trim().to_string();
+            if !model.is_empty() {
+                return Some(model);
+            }
+        }
+    }
+    None
+}
+
 /// Local IP via the classic UDP-connect trick: connecting a UDP socket
 /// doesn't send any packets, it just makes the kernel pick a source
 /// address/route, which `local_addr()` then reports.

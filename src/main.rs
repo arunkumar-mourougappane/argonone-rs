@@ -2,6 +2,7 @@ mod cli;
 mod config;
 mod fan;
 mod hardware;
+mod oled;
 mod service;
 mod sysinfo;
 

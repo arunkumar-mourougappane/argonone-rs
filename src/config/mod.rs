@@ -137,6 +137,140 @@ impl TempUnit {
     }
 }
 
+/// `/etc/argoneonoled.conf`: EON screen-rotation settings (W§1.3, §1.2).
+/// `screenlist` values in the wild are double-quoted
+/// (`screenlist="clock ip cpu storage temp"`); quotes are stripped on read.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OledConfig {
+    pub switch_duration_secs: u32,
+    /// Screensaver blank-after-idle, in seconds. `0` means disabled,
+    /// matching the shell config tool's convention for "off".
+    pub screensaver_secs: u32,
+    pub screenlist: String,
+    pub enabled: bool,
+}
+
+impl OledConfig {
+    pub fn default_config() -> Self {
+        OledConfig {
+            switch_duration_secs: 10,
+            screensaver_secs: 120,
+            screenlist: "clock ip cpu storage temp".to_string(),
+            enabled: true,
+        }
+    }
+
+    pub fn parse(contents: &str) -> Self {
+        let mut cfg = Self::default_config();
+        for line in contents.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let Some((key, value)) = line.split_once('=') else {
+                continue;
+            };
+            let value = value.trim().trim_matches('"');
+            match key.trim() {
+                "switchduration" => {
+                    if let Ok(v) = value.parse() {
+                        cfg.switch_duration_secs = v;
+                    }
+                }
+                "screensaver" => {
+                    if let Ok(v) = value.parse() {
+                        cfg.screensaver_secs = v;
+                    }
+                }
+                "screenlist" => cfg.screenlist = value.to_string(),
+                "enabled" => cfg.enabled = matches!(value, "Y" | "y" | "1" | "true"),
+                _ => {}
+            }
+        }
+        cfg
+    }
+
+    pub fn load_or_default(path: &Path) -> Self {
+        match std::fs::read_to_string(path) {
+            Ok(contents) => Self::parse(&contents),
+            Err(_) => Self::default_config(),
+        }
+    }
+
+    /// `None` means the screensaver is disabled (`screensaver=0`).
+    pub fn screensaver_duration(&self) -> Option<std::time::Duration> {
+        if self.screensaver_secs == 0 {
+            None
+        } else {
+            Some(std::time::Duration::from_secs(self.screensaver_secs as u64))
+        }
+    }
+}
+
+/// `/etc/argonrtc.conf`: EON RTC daily wake/sleep schedule. Not a
+/// Python-daemon legacy format (undocumented upstream, W§1.1 only
+/// describes the register map) — new to `argonone-rs`, kept in the same
+/// `key=value` style as the other config files for consistency.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RtcSchedule {
+    pub enabled: bool,
+    pub wake_hour: u8,
+    pub wake_minute: u8,
+    /// Daily poweroff time, checked against the RTC's own clock (W§1.1) —
+    /// `None` if `sleep=` wasn't set, meaning no scheduled poweroff.
+    pub sleep: Option<(u8, u8)>,
+}
+
+impl RtcSchedule {
+    pub fn disabled() -> Self {
+        RtcSchedule {
+            enabled: false,
+            wake_hour: 0,
+            wake_minute: 0,
+            sleep: None,
+        }
+    }
+
+    fn parse_hh_mm(value: &str) -> Option<(u8, u8)> {
+        let (h, m) = value.split_once(':')?;
+        let (h, m) = (h.parse::<u8>().ok()?, m.parse::<u8>().ok()?);
+        (h < 24 && m < 60).then_some((h, m))
+    }
+
+    pub fn parse(contents: &str) -> Self {
+        let mut schedule = Self::disabled();
+        for line in contents.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let Some((key, value)) = line.split_once('=') else {
+                continue;
+            };
+            let value = value.trim();
+            match key.trim() {
+                "enabled" => schedule.enabled = matches!(value, "Y" | "y" | "1" | "true"),
+                "wake" => {
+                    if let Some((h, m)) = Self::parse_hh_mm(value) {
+                        schedule.wake_hour = h;
+                        schedule.wake_minute = m;
+                    }
+                }
+                "sleep" => schedule.sleep = Self::parse_hh_mm(value),
+                _ => {}
+            }
+        }
+        schedule
+    }
+
+    pub fn load_or_default(path: &Path) -> Self {
+        match std::fs::read_to_string(path) {
+            Ok(contents) => Self::parse(&contents),
+            Err(_) => Self::disabled(),
+        }
+    }
+}
+
 /// Well-known paths, matching the Python daemon's layout exactly so an
 /// existing install's config carries over unmodified.
 pub struct ConfigPaths;
@@ -145,6 +279,8 @@ impl ConfigPaths {
     pub const CPU_CURVE: &'static str = "/etc/argononed.conf";
     pub const HDD_CURVE: &'static str = "/etc/argononed-hdd.conf";
     pub const UNITS: &'static str = "/etc/argonunits.conf";
+    pub const OLED: &'static str = "/etc/argoneonoled.conf";
+    pub const RTC_SCHEDULE: &'static str = "/etc/argonrtc.conf";
 }
 
 #[cfg(test)]
@@ -249,5 +385,71 @@ mod tests {
         let file = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(file.path(), "temperature=K\n").unwrap();
         assert_eq!(TempUnit::load_or_default(file.path()), TempUnit::Celsius);
+    }
+
+    #[test]
+    fn oled_config_parses_quoted_screenlist() {
+        let cfg = OledConfig::parse(
+            "switchduration=15\nscreensaver=60\nscreenlist=\"clock ip cpu\"\nenabled=Y\n",
+        );
+        assert_eq!(cfg.switch_duration_secs, 15);
+        assert_eq!(cfg.screensaver_secs, 60);
+        assert_eq!(cfg.screenlist, "clock ip cpu");
+        assert!(cfg.enabled);
+    }
+
+    #[test]
+    fn oled_config_missing_file_falls_back_to_default() {
+        let cfg = OledConfig::load_or_default(Path::new("/nonexistent/argoneonoled.conf"));
+        assert_eq!(cfg, OledConfig::default_config());
+    }
+
+    #[test]
+    fn oled_config_screensaver_zero_means_disabled() {
+        let cfg = OledConfig::parse("screensaver=0\n");
+        assert_eq!(cfg.screensaver_duration(), None);
+    }
+
+    #[test]
+    fn oled_config_screensaver_nonzero_converts_to_duration() {
+        let cfg = OledConfig::parse("screensaver=45\n");
+        assert_eq!(
+            cfg.screensaver_duration(),
+            Some(std::time::Duration::from_secs(45))
+        );
+    }
+
+    #[test]
+    fn oled_config_disabled_flag_parses_n() {
+        let cfg = OledConfig::parse("enabled=N\n");
+        assert!(!cfg.enabled);
+    }
+
+    #[test]
+    fn rtc_schedule_parses_wake_and_sleep_time() {
+        let schedule = RtcSchedule::parse("enabled=Y\nwake=07:30\nsleep=23:00\n");
+        assert!(schedule.enabled);
+        assert_eq!(schedule.wake_hour, 7);
+        assert_eq!(schedule.wake_minute, 30);
+        assert_eq!(schedule.sleep, Some((23, 0)));
+    }
+
+    #[test]
+    fn rtc_schedule_rejects_out_of_range_time() {
+        let schedule = RtcSchedule::parse("wake=25:99\n");
+        assert_eq!(schedule.wake_hour, 0);
+        assert_eq!(schedule.wake_minute, 0);
+    }
+
+    #[test]
+    fn rtc_schedule_sleep_defaults_to_none() {
+        let schedule = RtcSchedule::parse("wake=07:30\n");
+        assert_eq!(schedule.sleep, None);
+    }
+
+    #[test]
+    fn rtc_schedule_missing_file_is_disabled() {
+        let schedule = RtcSchedule::load_or_default(Path::new("/nonexistent/argonrtc.conf"));
+        assert_eq!(schedule, RtcSchedule::disabled());
     }
 }

@@ -9,6 +9,10 @@ pub mod gpio;
 #[cfg(target_os = "linux")]
 pub mod i2c;
 pub mod noop;
+#[cfg(target_os = "linux")]
+pub mod oled;
+#[cfg(target_os = "linux")]
+pub mod rtc;
 
 use std::fmt;
 
@@ -73,11 +77,50 @@ pub trait PowerButtonBackend: Send + Sync {
     fn spawn(self: Box<Self>) -> tokio::sync::mpsc::Receiver<ButtonEvent>;
 }
 
-/// Bundles the two hardware seams the daemon needs. Built once at startup
-/// via [`detect`].
+/// EON OLED panel (W§1.2, §1.7). No-op on Argon ONE/no-case builds — the
+/// screen-rotation loop still runs, it just renders into nothing.
+pub trait OledBackend: Send + Sync {
+    fn render(&mut self, screen: crate::oled::Screen, data: &crate::oled::OledData)
+    -> HwResult<()>;
+    fn clear(&mut self) -> HwResult<()>;
+}
+
+/// A point in time as read from / written to the PCF8563 RTC (W§1.1) — no
+/// timezone, matches the chip's own local wall-clock register semantics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RtcDateTime {
+    pub year: u16,
+    pub month: u8,
+    pub day: u8,
+    /// 0 = Sunday .. 6 = Saturday, matching the PCF8563's own weekday register.
+    pub weekday: u8,
+    pub hour: u8,
+    pub minute: u8,
+    pub second: u8,
+}
+
+/// EON RTC (PCF8563) access: read the battery-backed wall-clock time
+/// (source of truth for the sleep schedule below, since it keeps ticking
+/// across power loss even before NTP is reachable) and program the daily
+/// wake alarm (W§1.1). No-op on Argon ONE/no-case builds. There's
+/// deliberately no `set_time`: nothing in this daemon needs to program the
+/// RTC's own clock — it's the chip's job to free-run, not the daemon's job
+/// to drive it.
+pub trait RtcBackend: Send + Sync {
+    fn read_time(&mut self) -> HwResult<RtcDateTime>;
+    /// Program a daily wake alarm at `hour:minute` (day-of-month and
+    /// weekday match disabled, so it fires every day).
+    fn set_wake_alarm(&mut self, hour: u8, minute: u8) -> HwResult<()>;
+    fn clear_alarm(&mut self) -> HwResult<()>;
+}
+
+/// Bundles the hardware seams the daemon needs. Built once at startup via
+/// [`detect`].
 pub struct HardwareBackend {
     pub fan: Box<dyn FanBackend>,
     pub button: Box<dyn PowerButtonBackend>,
+    pub oled: Box<dyn OledBackend>,
+    pub rtc: Box<dyn RtcBackend>,
     pub board: board::Board,
 }
 
@@ -120,7 +163,34 @@ pub fn detect() -> HardwareBackend {
         let board = board::detect(fan_present);
         tracing::info!(?board, "board auto-detection complete");
 
-        HardwareBackend { fan, button, board }
+        let (oled, rtc): (Box<dyn OledBackend>, Box<dyn RtcBackend>) = if board == board::Board::Eon
+        {
+            let oled: Box<dyn OledBackend> = match oled::I2cOled::open() {
+                Ok(o) => Box::new(o),
+                Err(e) => {
+                    tracing::warn!(error = %e, "EON OLED unavailable — running with no-op OLED backend");
+                    Box::new(noop::NoopOled)
+                }
+            };
+            let rtc: Box<dyn RtcBackend> = match rtc::Pcf8563Rtc::open() {
+                Ok(r) => Box::new(r),
+                Err(e) => {
+                    tracing::warn!(error = %e, "EON RTC unavailable — running with no-op RTC backend");
+                    Box::new(noop::NoopRtc)
+                }
+            };
+            (oled, rtc)
+        } else {
+            (Box::new(noop::NoopOled), Box::new(noop::NoopRtc))
+        };
+
+        HardwareBackend {
+            fan,
+            button,
+            oled,
+            rtc,
+            board,
+        }
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -129,6 +199,8 @@ pub fn detect() -> HardwareBackend {
         HardwareBackend {
             fan: Box::new(noop::NoopFan),
             button: Box::new(noop::NoopPowerButton),
+            oled: Box::new(noop::NoopOled),
+            rtc: Box::new(noop::NoopRtc),
             board: board::Board::NoCase,
         }
     }

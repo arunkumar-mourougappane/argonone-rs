@@ -6,6 +6,14 @@ This file is the permanent, cumulative log across every version. For the prose w
 
 ## [Unreleased]
 
+### Added
+
+- EON OLED support (v0.2.0, W§1.2, §1.7): screen-rotation state machine (`switchduration` cycling, screensaver blank-after-idle, power-button `OledSwitch` force-advance/wake), seven dashboard screens (clock, IP, CPU, RAM, storage, temp, RAID) plus an original splash screen (`RPI` rotated 90°, detected Pi model, `argonone` signature), and `/etc/argoneonoled.conf` config-file compat.
+- **Blocking asset-sourcing decision resolved** (W§1.5): fonts/backgrounds are regenerated via the `embedded-graphics`/`ssd1306` crates' bundled, permissively-licensed fonts and primitive-drawn backgrounds rather than vendoring or fetching Argon40's originals — no bytes of Argon40's `.bin` assets used, and no reason to replicate their bespoke per-plane font packing since this project owns the whole render path.
+- EON RTC support (v0.2.0, W§1.1): PCF8563 register access with BCD encode/decode, daily wake-alarm programming, and a daily sleep (scheduled poweroff) check against the RTC's own clock — both driven by a new `/etc/argonrtc.conf` (`wake=`/`sleep=` `HH:MM`, `enabled=`), config-file-driven only per the v0.2.0 scope (no web UI yet).
+- `argonstatus`-parity additions to the `status` command: RTC current time and configured wake/sleep schedule.
+- `HardwareBackend` gains `OledBackend`/`RtcBackend` seams with no-op fallbacks, following the same pattern as the fan/button backends — inert on Argon ONE/no-case builds.
+
 ## [v0.1.0] - 2026-07-13
 
 Core hardware daemon (Argon ONE parity) — CLI/systemd only, no web server yet. See [docs/ROADMAP.md](docs/ROADMAP.md) for what "released" means at this milestone and what's next.
