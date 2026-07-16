@@ -4,12 +4,12 @@ version = "0.3.0"
 edition = "2024"
 authors = ["Arunkumar Mourougappane <amouroug.dev@gmail.com>"]
 license = "MIT"
-description = "A Rust daemon and CLI for Argon ONE/EON Raspberry Pi cases — I2C fan control, GPIO power-button handling, and system monitoring."
+description = "A Rust daemon, CLI, and web UI for Argon ONE/EON Raspberry Pi cases — I2C fan control, GPIO power-button handling, system monitoring, and a browser-based dashboard."
 repository = "https://github.com/arunkumar-mourougappane/argonone-rs"
 homepage = "https://github.com/arunkumar-mourougappane/argonone-rs"
 readme = "README.md"
 keywords = ["raspberry-pi", "argon-one", "gpio", "i2c", "daemon"]
-categories = ["hardware-support", "command-line-utilities", "embedded"]
+categories = ["hardware-support", "command-line-utilities", "embedded", "web-programming::http-server"]
 exclude = [
     "docs/",
     ".github/",

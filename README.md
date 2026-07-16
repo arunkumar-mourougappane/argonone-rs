@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi-A22846?logo=raspberrypi&logoColor=white)](https://www.raspberrypi.com/)
 
-A Rust daemon and CLI for Argon ONE/EON Raspberry Pi cases — I2C fan control, GPIO power-button handling, and system monitoring, config-compatible with the original Argon40 Python daemon.
+A Rust daemon, CLI, and web UI for Argon ONE/EON Raspberry Pi cases — I2C fan control, GPIO power-button handling, system monitoring, and a browser-based dashboard, config-compatible with the original Argon40 Python daemon.
 
 ## Status
 
@@ -59,6 +59,12 @@ On an Argon EON, the daemon also drives the OLED dashboard (screen rotation conf
 ```sh
 argonone-rs admin reset-password --username <name>
 ```
+
+### Troubleshooting
+
+- **`sudo systemctl start argonone-rs` hangs, `systemctl list-jobs` shows it queued behind `plymouth-quit-wait.service` ("running" forever).** A headless-boot Plymouth quirk unrelated to this daemon — it can stall `multi-user.target`, which the unit is ordered after. Unstick it with `sudo systemctl stop plymouth-quit-wait.service`; the queued jobs (including `argonone-rs`) then proceed immediately.
+- **`status=203/EXEC` / "Exec format error" in `journalctl -u argonone-rs`.** The binary at `/usr/local/bin/argonone-rs` is the wrong architecture — almost always caused by cross-compiling and then copying `target/release/argonone-rs` (the *host* build) instead of `target/aarch64-unknown-linux-gnu/release/argonone-rs` (the actual Pi binary). Verify with `file /usr/local/bin/argonone-rs` on the Pi — it should say `ELF 64-bit LSB pie executable, ARM aarch64`.
+- **Upgrading a box that still has the original Python daemon installed.** `argononed.service` will compete with `argonone-rs` for the same I2C bus (`0x1a`) if both are enabled. Disable the old one first: `sudo systemctl disable --now argononed.service`.
 
 ## Docs
 
