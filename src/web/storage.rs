@@ -49,13 +49,15 @@ pub async fn page(auth_session: AuthSession, State(state): State<AppState>) -> R
     let disks: Vec<DiskRow> = snapshot
         .into_iter()
         .map(|d| {
-            // Best-effort match against `df`'s mount-keyed usage: a whole
-            // disk device (e.g. "sda") won't itself have a mount, but its
-            // partitions might — this is a coarse "does anything on this
-            // device look full" signal, not a precise per-partition table.
+            // Match against `df`'s Filesystem column (e.g. `/dev/sda1`),
+            // not its mount path — a whole-disk device name like "sda"
+            // essentially never appears in a mount path, but always
+            // prefixes its own partitions' device names.
             let used_pct = usage
                 .iter()
-                .find(|u| u.mount.contains(&d.device.name))
+                .find(|u| {
+                    crate::sysinfo::filesystem_belongs_to_device(&u.filesystem, &d.device.name)
+                })
                 .map(|u| u.used_pct);
             DiskRow {
                 name: d.device.name,

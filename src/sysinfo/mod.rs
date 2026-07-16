@@ -113,6 +113,12 @@ fn parse_mem_info(contents: &str) -> Option<MemInfo> {
 
 #[derive(Debug, Clone)]
 pub struct DiskUsage {
+    /// `df`'s `Filesystem` column, e.g. `/dev/sda1` — what the storage
+    /// page (v0.4.0) matches against a whole-disk device name like
+    /// `sda`. Matching on `mount` instead (a plain path like `/` or
+    /// `/data`) doesn't work: mount paths essentially never contain the
+    /// underlying device name as a substring.
+    pub filesystem: String,
     pub mount: String,
     pub used_pct: u8,
 }
@@ -135,14 +141,26 @@ fn parse_disk_usage(text: &str) -> Vec<DiskUsage> {
         .skip(1) // header
         .filter_map(|line| {
             let fields: Vec<&str> = line.split_whitespace().collect();
+            let filesystem = fields.first()?.to_string();
             let mount = fields.get(5)?.to_string();
             let pct = fields.get(4)?.trim_end_matches('%').parse().ok()?;
             Some(DiskUsage {
+                filesystem,
                 mount,
                 used_pct: pct,
             })
         })
         .collect()
+}
+
+/// Whether a `df` row (identified by its `Filesystem` column) belongs to
+/// `device` (a whole-disk name like `sda`, from `lsblk`) — true for
+/// `/dev/sda`, `/dev/sda1`, `/dev/mapper/sda1_crypt`, etc.
+pub fn filesystem_belongs_to_device(filesystem: &str, device: &str) -> bool {
+    filesystem
+        .rsplit('/')
+        .next()
+        .is_some_and(|leaf| leaf.starts_with(device))
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -427,10 +445,31 @@ mod tests {
                      /dev/sda1    200000   180000  20000      90%    /data\n";
         let disks = parse_disk_usage(text);
         assert_eq!(disks.len(), 2);
+        assert_eq!(disks[0].filesystem, "/dev/root");
         assert_eq!(disks[0].mount, "/");
         assert_eq!(disks[0].used_pct, 50);
+        assert_eq!(disks[1].filesystem, "/dev/sda1");
         assert_eq!(disks[1].mount, "/data");
         assert_eq!(disks[1].used_pct, 90);
+    }
+
+    #[test]
+    fn filesystem_belongs_to_device_matches_partitions_not_mount_paths() {
+        // The actual bug: a whole-disk device name like "sda" is never a
+        // substring of a mount path like "/" or "/data" — matching has to
+        // go through df's Filesystem column instead.
+        assert!(filesystem_belongs_to_device("/dev/sda1", "sda"));
+        assert!(filesystem_belongs_to_device("/dev/sda", "sda"));
+        assert!(!filesystem_belongs_to_device("/dev/sdb1", "sda"));
+        assert!(!filesystem_belongs_to_device("/", "sda"));
+        assert!(!filesystem_belongs_to_device("/data", "sda"));
+    }
+
+    #[test]
+    fn filesystem_belongs_to_device_handles_nvme_and_mmc_partition_naming() {
+        assert!(filesystem_belongs_to_device("/dev/nvme0n1p1", "nvme0n1"));
+        assert!(filesystem_belongs_to_device("/dev/mmcblk0p1", "mmcblk0"));
+        assert!(!filesystem_belongs_to_device("/dev/mmcblk1p1", "mmcblk0"));
     }
 
     #[test]
