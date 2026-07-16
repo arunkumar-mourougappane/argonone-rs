@@ -18,6 +18,17 @@ table.disks th{text-align:left;font-family:var(--font-mono);font-size:10.5px;col
 table.disks td{padding:9px 10px;border-bottom:1px solid var(--border);}
 .dev-sub{font-size:11.5px;color:var(--muted);}
 .empty{color:var(--muted);font-size:13px;}
+.bar-cell{display:flex;align-items:center;gap:8px;}
+.bar{flex:1;max-width:110px;height:6px;border-radius:3px;background:var(--bg);overflow:hidden;}
+.bar i{display:block;height:100%;border-radius:3px;font-style:normal;}
+.bar.good i{background:var(--good);}
+.bar.warn i{background:var(--warn);}
+.bar.crit i{background:var(--crit);}
+.bar-pct{font-family:var(--font-mono);font-size:11.5px;color:var(--muted);}
+.temp{font-family:var(--font-mono);font-size:12.5px;font-weight:600;}
+.temp.good{color:var(--good);}
+.temp.warn{color:var(--warn);}
+.temp.crit{color:var(--crit);}
 </style>
 <div class="page-head">
   <h1>Storage &amp; RAID</h1>
@@ -46,7 +57,7 @@ table.disks td{padding:9px 10px;border-bottom:1px solid var(--border);}
   <div class="card-head"><div class="card-title">Disks</div></div>
   {% if disks %}
   <table class="disks">
-    <thead><tr><th>Device</th><th>Usage</th><th>Temp</th></tr></thead>
+    <thead><tr><th>Device</th><th>Usage</th><th>Temp</th><th>Role</th></tr></thead>
     <tbody>
       {% for d in disks %}
       <tr>
@@ -54,8 +65,16 @@ table.disks td{padding:9px 10px;border-bottom:1px solid var(--border);}
           <div>{{ d.name }}</div>
           <div class="dev-sub">{{ "%.0f"|format(d.size_gb) }} GB{% if d.model %} · {{ d.model }}{% endif %}</div>
         </td>
-        <td>{% if d.used_pct is not none %}{{ d.used_pct }}%{% else %}—{% endif %}</td>
-        <td>{{ d.temp_display if d.temp_display is not none else "—" }}</td>
+        <td>
+          {% if d.used_pct is not none %}
+          <div class="bar-cell">
+            <div class="bar {{ d.usage_severity }}"><i style="width:{{ d.used_pct }}%"></i></div>
+            <span class="bar-pct">{{ d.used_pct }}%</span>
+          </div>
+          {% else %}—{% endif %}
+        </td>
+        <td>{% if d.temp_display is not none %}<span class="temp {{ d.temp_severity }}">{{ d.temp_display }}</span>{% else %}—{% endif %}</td>
+        <td>{% if d.role_label %}<span class="badge {{ d.role_severity }}">{{ d.role_label }}</span>{% else %}—{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>

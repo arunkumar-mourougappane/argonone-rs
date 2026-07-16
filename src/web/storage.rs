@@ -11,6 +11,32 @@ use axum::response::{Html, IntoResponse, Redirect, Response};
 use minijinja::context;
 use serde::Serialize;
 
+/// Usage-percent severity banding for the progress bar/role badge —
+/// matches the green/yellow/red convention `argondashboard.py` already
+/// used for temperature and RAID health (W§3.4).
+fn usage_severity(pct: u8) -> &'static str {
+    if pct >= 90 {
+        "crit"
+    } else if pct >= 70 {
+        "warn"
+    } else {
+        "good"
+    }
+}
+
+/// Disk temperature severity banding, in Celsius regardless of display
+/// unit — thresholds are a hardware property, not something that should
+/// shift with the operator's C/F preference.
+fn temp_severity(celsius: f32) -> &'static str {
+    if celsius >= 55.0 {
+        "crit"
+    } else if celsius >= 45.0 {
+        "warn"
+    } else {
+        "good"
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct DiskRow {
     name: String,
@@ -20,7 +46,13 @@ struct DiskRow {
     /// v0.4.0) — e.g. "34.0°C"/"93.2°F" — so the template doesn't need
     /// its own conversion (and can't independently forget to convert).
     temp_display: Option<String>,
+    temp_severity: &'static str,
     used_pct: Option<u8>,
+    usage_severity: &'static str,
+    /// "RAID member" if this device backs any array below, else
+    /// "NN% full" once usage is known, else empty (no badge).
+    role_label: String,
+    role_severity: &'static str,
 }
 
 #[derive(Debug, Serialize)]
@@ -46,6 +78,15 @@ pub async fn page(auth_session: AuthSession, State(state): State<AppState>) -> R
     let usage = crate::sysinfo::read_disk_usage();
     let raid = crate::sysinfo::read_raid_status();
 
+    // Membership check reuses filesystem_belongs_to_device: a RAID
+    // member is recorded as a partition name (e.g. "sda1"), and "does
+    // this partition name belong to this whole-disk device" is exactly
+    // that same prefix relationship.
+    let raid_member_names: Vec<String> = raid
+        .iter()
+        .flat_map(|a| a.devices.iter().map(|d| d.name.clone()))
+        .collect();
+
     let disks: Vec<DiskRow> = snapshot
         .into_iter()
         .map(|d| {
@@ -59,6 +100,18 @@ pub async fn page(auth_session: AuthSession, State(state): State<AppState>) -> R
                     crate::sysinfo::filesystem_belongs_to_device(&u.filesystem, &d.device.name)
                 })
                 .map(|u| u.used_pct);
+
+            let is_raid_member = raid_member_names
+                .iter()
+                .any(|m| crate::sysinfo::filesystem_belongs_to_device(m, &d.device.name));
+            let (role_label, role_severity) = if is_raid_member {
+                ("RAID member".to_string(), "good")
+            } else if let Some(pct) = used_pct {
+                (format!("{pct}% full"), usage_severity(pct))
+            } else {
+                (String::new(), "good")
+            };
+
             DiskRow {
                 name: d.device.name,
                 size_gb: d.device.size_bytes as f64 / 1_000_000_000.0,
@@ -66,7 +119,11 @@ pub async fn page(auth_session: AuthSession, State(state): State<AppState>) -> R
                 temp_display: d
                     .temp_c
                     .map(|c| format!("{:.1}\u{b0}{}", unit.convert_c(c), unit.suffix())),
+                temp_severity: d.temp_c.map(temp_severity).unwrap_or("good"),
                 used_pct,
+                usage_severity: used_pct.map(usage_severity).unwrap_or("good"),
+                role_label,
+                role_severity,
             }
         })
         .collect();
@@ -98,4 +155,29 @@ pub async fn page(auth_session: AuthSession, State(state): State<AppState>) -> R
         },
     );
     html.into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn usage_severity_bands_at_70_and_90() {
+        assert_eq!(usage_severity(0), "good");
+        assert_eq!(usage_severity(69), "good");
+        assert_eq!(usage_severity(70), "warn");
+        assert_eq!(usage_severity(89), "warn");
+        assert_eq!(usage_severity(90), "crit");
+        assert_eq!(usage_severity(100), "crit");
+    }
+
+    #[test]
+    fn temp_severity_bands_at_45_and_55() {
+        assert_eq!(temp_severity(0.0), "good");
+        assert_eq!(temp_severity(44.9), "good");
+        assert_eq!(temp_severity(45.0), "warn");
+        assert_eq!(temp_severity(54.9), "warn");
+        assert_eq!(temp_severity(55.0), "crit");
+        assert_eq!(temp_severity(80.0), "crit");
+    }
 }
