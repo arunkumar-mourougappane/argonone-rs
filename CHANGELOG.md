@@ -112,5 +112,8 @@ Core hardware daemon (Argon ONE parity) — CLI/systemd only, no web server yet.
 
 - `docs/mockups/00-index.html`: a duplicate CSS grid declaration on nested elements (`.flow li` and its only child `.flow a` both declaring the same `display:grid`) was squeezing each screen-flow row into a 56px-wide column, wrapping text and stranding the role tag. Verified the fix by rendering both themes with a headless browser.
 
-[Unreleased]: https://github.com/arunkumar-mourougappane/argonone-rs/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/arunkumar-mourougappane/argonone-rs/compare/v0.4.0...HEAD
+[v0.4.0]: https://github.com/arunkumar-mourougappane/argonone-rs/compare/v0.3.0...v0.4.0
+[v0.3.0]: https://github.com/arunkumar-mourougappane/argonone-rs/compare/v0.2.0...v0.3.0
+[v0.2.0]: https://github.com/arunkumar-mourougappane/argonone-rs/compare/v0.1.0...v0.2.0
 [v0.1.0]: https://github.com/arunkumar-mourougappane/argonone-rs/compare/53094f5...v0.1.0
