@@ -36,26 +36,29 @@ daemon shipped before touching web/auth complexity — deliberately the
 smallest useful slice, matching what `argononed.py` alone does today.
 
 - I2C register bus + fan capability auto-detection (W§1.1, `argonregister`
-  parity)
+  parity). Done — `src/hardware/i2c.rs::I2cFan`.
 - Fan control loop: temp→speed curve, 30s poll, hysteresis on speed
   decrease (W§1.4) — hardcoded default curve, no persistence/editing yet
-  (that's v0.4.0)
+  (that's v0.4.0). Done — `src/fan/mod.rs`.
 - GPIO power-button pulse-width monitor: reboot/shutdown/OLED-switch
-  semantics (W§1.1)
+  semantics (W§1.1). Done — `src/hardware/gpio.rs::GpiodPowerButton`.
 - `HardwareBackend` trait with a no-op impl so a Pi without the case
   attached doesn't crash (W§1.4) — this is the seam v0.1.0's tests run
-  against, not real I2C/GPIO
+  against, not real I2C/GPIO. Done — `src/hardware/noop.rs`.
 - Sysinfo collection: CPU/RAM/temp/disk/RAID via `/proc` + `smartctl` +
-  `mdadm` (W§1.2)
+  `mdadm` (W§1.2). Done — `src/sysinfo/mod.rs`.
 - Board auto-detection: ONE vs EON via I2C probe, not install-time file
   presence (W§2.6) — EON-specific behavior (OLED/RTC) stays inert until
-  v0.2.0 actually uses the signal
+  v0.2.0 actually uses the signal. Done — `src/hardware/board.rs`.
 - Config file compat: read existing `/etc/argononed.conf` /
   `/etc/argononed-hdd.conf` / `/etc/argonunits.conf` formats unchanged
   (W§1.3) — this is the *only* source of truth until v0.3.0's SQLite
-  migration replaces it
-- CLI argv compat: `SERVICE` / `SHUTDOWN` / `FANOFF` (W§4, migration notes)
-- systemd unit, `sd_notify` readiness (A§4.2, minus the web-specific bits)
+  migration replaces it. Done — `src/config/mod.rs`.
+- CLI argv compat: `SERVICE` / `SHUTDOWN` / `FANOFF` (W§4, migration
+  notes). Done — `src/cli.rs`.
+- systemd unit, `sd_notify` readiness (A§4.2, minus the web-specific
+  bits). Done — `packaging/systemd/argonone-rs.service`,
+  `sd_notify::notify` in `src/service.rs`.
 
 **Not in scope**: OLED, RTC, web server, auth, persistence beyond config
 files. Deliberately deferred, not forgotten.
