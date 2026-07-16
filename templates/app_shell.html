@@ -30,12 +30,18 @@
   </main>
 </div>
 <script>
+function formatTemp(celsius, unit) {
+  if (celsius == null) return 'n/a';
+  var value = unit === 'F' ? (celsius * 9 / 5 + 32) : celsius;
+  return value.toFixed(1) + '°' + (unit || 'C');
+}
+
 document.body.addEventListener('htmx:wsAfterMessage', function (evt) {
   var data;
   try { data = JSON.parse(evt.detail.message); } catch (e) { return; }
   if (data.type === 'stats') {
     document.getElementById('stat-cpu-pct').textContent = data.cpu_pct != null ? data.cpu_pct.toFixed(0) + '%' : 'n/a';
-    document.getElementById('stat-cpu-temp').textContent = data.cpu_temp_c != null ? data.cpu_temp_c.toFixed(1) + '°C' : 'n/a';
+    document.getElementById('stat-cpu-temp').textContent = formatTemp(data.cpu_temp_c, data.unit);
     document.getElementById('stat-ram-pct').textContent = data.ram_used_pct != null ? data.ram_used_pct.toFixed(0) + '%' : 'n/a';
   } else if (data.type === 'fan_state') {
     document.getElementById('stat-fan-pct').textContent = data.current_pct + '%';

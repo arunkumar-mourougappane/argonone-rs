@@ -55,7 +55,7 @@ table.disks td{padding:9px 10px;border-bottom:1px solid var(--border);}
           <div class="dev-sub">{{ "%.0f"|format(d.size_gb) }} GB{% if d.model %} · {{ d.model }}{% endif %}</div>
         </td>
         <td>{% if d.used_pct is not none %}{{ d.used_pct }}%{% else %}—{% endif %}</td>
-        <td>{% if d.temp_c is not none %}{{ "%.0f"|format(d.temp_c) }}°C{% else %}—{% endif %}</td>
+        <td>{{ d.temp_display if d.temp_display is not none else "—" }}</td>
       </tr>
       {% endfor %}
     </tbody>

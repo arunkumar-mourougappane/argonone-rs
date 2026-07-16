@@ -19,10 +19,18 @@ async fn stream(mut socket: WebSocket, state: AppState) {
     loop {
         tokio::select! {
             _ = interval.tick() => {
+                let unit = match *state.units_tx.borrow() {
+                    crate::config::TempUnit::Celsius => "C",
+                    crate::config::TempUnit::Fahrenheit => "F",
+                };
                 let stats = json!({
                     "type": "stats",
                     "cpu_pct": cpu.sample_percent(),
+                    // Always Celsius — pair with `unit` (the operator's
+                    // display preference) to convert client-side, same
+                    // contract as GET /api/status.
                     "cpu_temp_c": crate::sysinfo::read_cpu_temp_c(),
+                    "unit": unit,
                     "ram_used_pct": crate::sysinfo::read_mem_info().map(|m| m.used_percent()),
                 });
                 if socket.send(Message::Text(stats.to_string().into())).await.is_err() {

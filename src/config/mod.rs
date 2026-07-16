@@ -158,6 +158,28 @@ impl TempUnit {
         }
         TempUnit::Celsius
     }
+
+    /// Converts a Celsius reading to this unit, in degrees — the plain
+    /// numeric value, so callers can format it however their surface
+    /// needs (a `%.1f°C` string here, an OLED-safe ASCII `C` suffix
+    /// there, a bare number over JSON elsewhere). Sysinfo/hardware
+    /// always reads Celsius; this is the one conversion formula every
+    /// display surface should share, rather than each re-deriving it
+    /// (and risking exactly the kind of "some pages forgot to convert"
+    /// bug this was extracted to close off).
+    pub fn convert_c(self, celsius: f32) -> f32 {
+        match self {
+            TempUnit::Celsius => celsius,
+            TempUnit::Fahrenheit => celsius * 9.0 / 5.0 + 32.0,
+        }
+    }
+
+    pub fn suffix(self) -> &'static str {
+        match self {
+            TempUnit::Celsius => "C",
+            TempUnit::Fahrenheit => "F",
+        }
+    }
 }
 
 /// `/etc/argoneonoled.conf`: EON screen-rotation settings (W§1.3, §1.2).
@@ -449,6 +471,24 @@ mod tests {
         let file = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(file.path(), "temperature=F\n").unwrap();
         assert_eq!(TempUnit::load_or_default(file.path()), TempUnit::Fahrenheit);
+    }
+
+    #[test]
+    fn convert_c_is_identity_for_celsius() {
+        assert_eq!(TempUnit::Celsius.convert_c(0.0), 0.0);
+        assert_eq!(TempUnit::Celsius.convert_c(100.0), 100.0);
+    }
+
+    #[test]
+    fn convert_c_converts_to_fahrenheit() {
+        assert_eq!(TempUnit::Fahrenheit.convert_c(0.0), 32.0);
+        assert_eq!(TempUnit::Fahrenheit.convert_c(100.0), 212.0);
+    }
+
+    #[test]
+    fn suffix_matches_unit() {
+        assert_eq!(TempUnit::Celsius.suffix(), "C");
+        assert_eq!(TempUnit::Fahrenheit.suffix(), "F");
     }
 
     #[test]

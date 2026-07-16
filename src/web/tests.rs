@@ -431,6 +431,60 @@ async fn viewer_cannot_change_units_but_operator_can() {
     );
 }
 
+/// Regression test: switching units on the System page used to only
+/// reach the OLED display — `GET /api/status` (and the WebSocket `stats`
+/// message it shares a payload shape with) kept reporting `unit: "C"`
+/// regardless, because the PUT handler wrote the DB but the read paths
+/// never looked at the live `units_tx` watch channel.
+#[tokio::test]
+async fn api_status_reflects_units_after_a_put() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "op1", "operator").await;
+
+    let get_body = |resp: axum::response::Response| async {
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()
+    };
+
+    let before = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/status")
+                .header("cookie", &cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(get_body(before).await["unit"], "C");
+
+    let put = router
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            "/api/settings/units",
+            r#"{"unit":"F"}"#,
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(put.status(), StatusCode::OK);
+
+    let after = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/status")
+                .header("cookie", &cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(get_body(after).await["unit"], "F");
+}
+
 #[tokio::test]
 async fn fan_storage_and_system_pages_render_for_logged_in_users() {
     let (router, pool) = test_router().await;

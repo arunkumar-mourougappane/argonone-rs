@@ -410,13 +410,11 @@ pub async fn print_status() {
         None => crate::config::TempUnit::load_or_default(Path::new(ConfigPaths::UNITS)),
     };
     match sysinfo::read_cpu_temp_c() {
-        Some(t) => {
-            let (value, suffix) = match unit {
-                crate::config::TempUnit::Celsius => (t, "C"),
-                crate::config::TempUnit::Fahrenheit => (t * 9.0 / 5.0 + 32.0, "F"),
-            };
-            println!("temp:       {value:.1}\u{b0}{suffix}");
-        }
+        Some(t) => println!(
+            "temp:       {:.1}\u{b0}{}",
+            unit.convert_c(t),
+            unit.suffix()
+        ),
         None => println!("temp:       unavailable"),
     }
 

@@ -50,10 +50,7 @@ where
 }
 
 fn fmt_temp(temp_c: f32, unit: TempUnit) -> String {
-    match unit {
-        TempUnit::Celsius => format!("{temp_c:.1}C"),
-        TempUnit::Fahrenheit => format!("{:.1}F", temp_c * 9.0 / 5.0 + 32.0),
-    }
+    format!("{:.1}{}", unit.convert_c(temp_c), unit.suffix())
 }
 
 /// Draw `screen`'s content into `target`, clearing it first. Splash is

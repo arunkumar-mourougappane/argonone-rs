@@ -3,6 +3,7 @@
 //! just "the process is running."
 
 use super::AppState;
+use crate::config::TempUnit;
 use crate::hardware::board::Board;
 use crate::sysinfo;
 use axum::Json;
@@ -15,7 +16,12 @@ pub struct StatusResponse {
     hardware: &'static str,
     board: &'static str,
     cpu_pct: Option<f32>,
+    /// Always Celsius — the canonical unit sysinfo reads hardware in.
+    /// Pair with `unit` (the operator's display preference, v0.4.0's
+    /// System page) to convert for display; don't bake a lossy
+    /// conversion into the API response itself.
     cpu_temp_c: Option<f32>,
+    unit: &'static str,
     ram_used_pct: Option<f32>,
     fan_pct: u8,
 }
@@ -30,6 +36,10 @@ pub async fn status(State(state): State<AppState>) -> Json<StatusResponse> {
         Board::One => "one",
         Board::Eon => "eon",
     };
+    let unit = match *state.units_tx.borrow() {
+        TempUnit::Celsius => "C",
+        TempUnit::Fahrenheit => "F",
+    };
 
     let mut cpu = sysinfo::CpuUsage::new();
     cpu.sample_percent();
@@ -42,6 +52,7 @@ pub async fn status(State(state): State<AppState>) -> Json<StatusResponse> {
         board,
         cpu_pct,
         cpu_temp_c: sysinfo::read_cpu_temp_c(),
+        unit,
         ram_used_pct: sysinfo::read_mem_info().map(|m| m.used_percent()),
         fan_pct: *state.fan_speed.borrow(),
     })

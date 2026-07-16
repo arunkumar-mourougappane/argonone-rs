@@ -16,7 +16,10 @@ struct DiskRow {
     name: String,
     size_gb: f64,
     model: Option<String>,
-    temp_c: Option<f32>,
+    /// Pre-formatted in the operator's unit preference (System page,
+    /// v0.4.0) — e.g. "34.0°C"/"93.2°F" — so the template doesn't need
+    /// its own conversion (and can't independently forget to convert).
+    temp_display: Option<String>,
     used_pct: Option<u8>,
 }
 
@@ -38,6 +41,7 @@ pub async fn page(auth_session: AuthSession, State(state): State<AppState>) -> R
         return Redirect::to("/login").into_response();
     };
 
+    let unit = crate::db::settings::load_units(&state.pool).await;
     let snapshot = crate::sysinfo::read_storage_snapshot().await;
     let usage = crate::sysinfo::read_disk_usage();
     let raid = crate::sysinfo::read_raid_status();
@@ -57,7 +61,9 @@ pub async fn page(auth_session: AuthSession, State(state): State<AppState>) -> R
                 name: d.device.name,
                 size_gb: d.device.size_bytes as f64 / 1_000_000_000.0,
                 model: d.device.model,
-                temp_c: d.temp_c,
+                temp_display: d
+                    .temp_c
+                    .map(|c| format!("{:.1}\u{b0}{}", unit.convert_c(c), unit.suffix())),
                 used_pct,
             }
         })
