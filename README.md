@@ -11,7 +11,7 @@ A Rust daemon, CLI, and web UI for Argon ONE/EON Raspberry Pi cases — I2C fan 
 
 ## Status
 
-Latest tagged release: **v0.3.0** (web foundation — persistence, auth, live shell), verified on real Argon ONE/EON hardware. **v0.4.0** (fan curve editor, Storage & RAID, System pages) is implemented and route-tested on `main` but not yet tagged — it still needs a verification pass against real disks/RAID hardware. Every hardware access goes through a `HardwareBackend` trait with a no-op fallback, so the daemon runs (and is testable) without the case attached.
+Latest tagged release: **v0.3.0** (web foundation — persistence, auth, live shell), verified on real Argon ONE/EON hardware. **v0.4.0** (fan curve editor, Storage & RAID, System pages) is implemented, route-tested, and verified end-to-end on real hardware — including against actual disks and a RAID array — but not yet tagged. Every hardware access goes through a `HardwareBackend` trait with a no-op fallback, so the daemon runs (and is testable) without the case attached.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full v0.1.0 → v0.7.0 milestone plan (each item annotated `Done`/`Not yet done` against the code) and [CHANGELOG.md](CHANGELOG.md) for the dated, cumulative record of what's landed.
 

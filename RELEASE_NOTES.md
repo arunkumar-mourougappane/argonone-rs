@@ -36,7 +36,7 @@ v0.4.0 is **Core dashboard: fan control, storage, system** — the highest-value
 
 ## Verified on Hardware
 
-**Not yet done.** Unlike v0.1.0–v0.3.0, this milestone has not been run end-to-end on a real Argon ONE/EON case — development happened without the case or any block devices attached, so the fan safety floor, HDD-curve `max()` behavior, and `lsblk`/`smartctl`/`/proc/mdstat` parsing are covered only by unit tests against synthetic/captured output, not a live run. A hardware pass is required before this release meets the bar every prior one did — see [docs/ROADMAP.md](docs/ROADMAP.md#v040--core-dashboard-fan-control-storage-system)'s own "Not yet done" note.
+v0.4.0 has been run end-to-end on a real Argon ONE/EON case: the fan curve editor (CPU/HDD tabs) applying live to the real fan, the 25%-at-75°C safety floor, the Storage & RAID page against actual attached disks and a real RAID array (`lsblk`/`smartctl`/`/proc/mdstat` parsing confirmed against real data, not just synthetic test fixtures), and the System page's C/F toggle propagating across the dashboard, OLED, and fan/storage displays were all confirmed on-device.
 
 ## Deploying
 

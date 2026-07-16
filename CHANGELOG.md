@@ -23,7 +23,7 @@ Core dashboard: fan control, storage, system — the highest-value milestone, re
 - A shared toast notification component (`app_shell.html`) for save/action success feedback, matching every mockup's pattern — previously the running app had no positive confirmation anywhere, only inline error text on failure. Wired into the fan curve editor's save and the System page's units toggle.
 - A live "now: NN°C → NN%" indicator on the fan curve chart (badge plus a marker line/dot), driven by the existing `stats`/`fan_state` WebSocket messages, matching `04-fan-curve-editor.html`'s current-operating-point marker.
 - Storage & RAID page: a Role column classifying each disk as a RAID member or `NN% full`, plus severity-banded (good/warn/crit) coloring on the usage progress bar and temperature reading, matching `05-storage-raid.html`.
-- **Not yet done**: verified on real hardware with actual disks/RAID attached — unlike v0.1.0-v0.3.0, this milestone's development pass ran without a case or block devices attached, so the fan safety floor, HDD-curve behavior, and `lsblk`/`smartctl`/`/proc/mdstat` parsing are covered by unit tests against synthetic/captured output only. That pass is still required before this milestone meets the bar every prior release did.
+- v0.4.0 verified end-to-end on real Argon ONE/EON hardware: the fan curve editor applying live to the real fan, the 25%-at-75°C safety floor, the Storage & RAID page against actual attached disks and a real RAID array, and the units toggle propagating across every display, all confirmed on-device.
 
 ### Fixed
 

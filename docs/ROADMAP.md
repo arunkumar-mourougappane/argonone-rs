@@ -198,10 +198,12 @@ The highest-value milestone — this is what actually replaces
   A§3.4 — the legacy files stay readable only for a one-time import,
   still deferred to v0.7.0. `argonone-rs status` reads the same DB values
   the running daemon uses, so the two can't drift out of sync.
-- **Not yet done**: verified on real hardware with actual disks/RAID
-  attached (this dev pass ran on a Pi/Mac with no block devices to
-  exercise `lsblk`/`smartctl`/`mdstat` against real data) — v0.4.0 needs
-  that pass, same bar as v0.1.0-v0.3.0, before it's considered complete.
+- Verified on real Argon ONE/EON hardware — fan curve editor and safety
+  floor applying live to the real fan, Storage & RAID against actual
+  attached disks and a real RAID array (`lsblk`/`smartctl`/`mdstat`
+  against real data, not just synthetic test fixtures), and the units
+  toggle propagating across every display, all confirmed on-device,
+  matching the bar v0.1.0-v0.3.0 shipped with.
 
 ---
 
