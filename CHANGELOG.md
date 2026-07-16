@@ -31,6 +31,7 @@ Core dashboard: fan control, storage, system — the highest-value milestone, re
 - Storage page disk-usage matching compared a mount path (e.g. `/`) against a device name (e.g. `sda`), which essentially never matches — usage always showed `—`. Fixed by matching against `df`'s `Filesystem` column instead, via a new `filesystem_belongs_to_device` leaf-component matcher (also reused for RAID-membership matching).
 - `.btn` had a blanket `width:100%` meant only for the single-column auth forms (login/setup/change-password), but was reused unscoped elsewhere — Save/Reset buttons on the fan curve page would have stretched full-width, and `.btn.ghost` was never actually styled. Scoped the full-width rule to those forms and the sidebar logout button, and added the missing ghost variant.
 - The System page's Celsius/Fahrenheit selector only changed text color on the active option, unlike every other selector control in the app; restored the mockup's raised background-pill highlight.
+- `GET /api/settings/units` was missing entirely — only `PUT` was wired, despite both being documented `viewer+`/`operator+` in the API contract (W§2.5). A viewer had no way to read the setting except via the broader `GET /api/status` payload.
 
 ## [v0.3.0] - 2026-07-15
 

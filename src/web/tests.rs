@@ -485,6 +485,75 @@ async fn api_status_reflects_units_after_a_put() {
     assert_eq!(get_body(after).await["unit"], "F");
 }
 
+/// `GET /api/settings/units` was missing entirely (only `PUT` was wired)
+/// despite being documented viewer+ in the API contract (W§2.5) — a
+/// viewer had no way to read the setting without hitting the broader
+/// `/api/status` payload.
+#[tokio::test]
+async fn viewer_can_read_units_and_sees_it_change_after_a_put() {
+    let (router, pool) = test_router().await;
+    let viewer_cookie = seed_and_login(&router, &pool, "viewer1", "viewer").await;
+
+    let get_body = |resp: axum::response::Response| async {
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()
+    };
+
+    let before = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/settings/units")
+                .header("cookie", &viewer_cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(before.status(), StatusCode::OK);
+    assert_eq!(get_body(before).await["unit"], "C");
+
+    sqlx::query("INSERT INTO users (username, password_hash, role) VALUES ('op1', ?1, 'operator')")
+        .bind(crate::auth::hash_password("password12345"))
+        .execute(&pool)
+        .await
+        .unwrap();
+    let op_login = router
+        .clone()
+        .oneshot(form_request(
+            "POST",
+            "/login",
+            "username=op1&password=password12345",
+            None,
+        ))
+        .await
+        .unwrap();
+    let op_cookie = extract_set_cookie(&op_login);
+    router
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            "/api/settings/units",
+            r#"{"unit":"F"}"#,
+            &op_cookie,
+        ))
+        .await
+        .unwrap();
+
+    let after = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/settings/units")
+                .header("cookie", &viewer_cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(get_body(after).await["unit"], "F");
+}
+
 #[tokio::test]
 async fn fan_storage_and_system_pages_render_for_logged_in_users() {
     let (router, pool) = test_router().await;

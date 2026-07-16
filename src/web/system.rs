@@ -62,6 +62,16 @@ pub struct UnitsResponse {
     pub unit: String,
 }
 
+pub async fn get_units(State(state): State<AppState>) -> Json<UnitsResponse> {
+    let unit = match crate::db::settings::load_units(&state.pool).await {
+        TempUnit::Celsius => "C",
+        TempUnit::Fahrenheit => "F",
+    };
+    Json(UnitsResponse {
+        unit: unit.to_string(),
+    })
+}
+
 pub async fn put_units(
     auth_session: AuthSession,
     State(state): State<AppState>,

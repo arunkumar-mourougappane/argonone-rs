@@ -179,7 +179,9 @@ The highest-value milestone — this is what actually replaces
   minus HTTPS/IR/RTC which land in later milestones). Done —
   `templates/system.html`, `src/web/system.rs`.
 - `PUT /api/fan/curve/{cpu,hdd}`, `GET/PUT /api/settings/units` per the
-  API contract (W§2.5). Done.
+  API contract (W§2.5). Done — `GET /api/settings/units` was initially
+  missed (only `PUT` was wired), caught in a later audit and added,
+  `viewer+` per the contract table.
 - **Beyond the original bullet list**: the HDD curve is now actually
   *applied*, not just editable — the daemon takes `max(cpu_curve_speed,
   hdd_curve_speed)` each poll (`04-fan-curve-editor.html`'s documented

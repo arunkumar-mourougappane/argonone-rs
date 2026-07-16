@@ -23,7 +23,7 @@ use axum::extract::{Request, State};
 use axum::http::header;
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Redirect, Response};
-use axum::routing::{get, post, put};
+use axum::routing::{get, post};
 use axum_login::AuthManagerLayerBuilder;
 use axum_login::tower_sessions::cookie::SameSite;
 use axum_login::tower_sessions::{Expiry, SessionManagerLayer};
@@ -114,7 +114,10 @@ pub async fn build_router(
         )
         .route("/storage", get(storage::page))
         .route("/system", get(system::page))
-        .route("/api/settings/units", put(system::put_units))
+        .route(
+            "/api/settings/units",
+            get(system::get_units).put(system::put_units),
+        )
         .route_layer(middleware::from_fn(login::require_login));
 
     let public = Router::new()
