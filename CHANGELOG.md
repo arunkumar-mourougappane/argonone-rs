@@ -6,6 +6,10 @@ This file is the permanent, cumulative log across every version. For the prose w
 
 ## [Unreleased]
 
+## [v0.4.0] - 2026-07-16
+
+Core dashboard: fan control, storage, system — the highest-value milestone, replacing `argonone-fanconfig.sh`/`argon-unitconfig.sh` and friends with the web UI. See [docs/ROADMAP.md](docs/ROADMAP.md) for what's next.
+
 ### Added
 
 - Core dashboard (v0.4.0, W§2.5/§2.7/§2.8, W§3.4): draggable-SVG fan curve editor (CPU/HDD tabs), Storage & RAID page, and a System page (units toggle + firmware/service info) — the web UI's first real feature screens, replacing `argonone-fanconfig.sh`/`argon-unitconfig.sh` and friends.
@@ -15,6 +19,17 @@ This file is the permanent, cumulative log across every version. For the prose w
 - New sysinfo surface: per-disk S.M.A.R.T. temperature (`smartctl`), whole-disk enumeration (`lsblk`), and richer `/proc/mdstat` RAID parsing (level, size, working/failed/spare disk counts, member device list) — previously only a coarse name+state summary.
 - Fan curves and the temperature-unit setting are now DB-backed (`fan_curve_points`/`settings` tables), replacing the config-file source of truth per the plan already recorded when those files were first read (v0.1.0) — `argonone-rs status` reads the same values the running daemon applies, so the two can't drift.
 - Shared authenticated app-shell template (sidebar navigation, status strip) factored out of the v0.3.0 dashboard shell and reused across all four authenticated pages.
+- `scripts/deploy.sh`/`scripts/deploy-local.sh`: script the manual cross-compile → scp → systemd-install sequence from README's Troubleshooting section, guarding against the real failure modes hit during on-hardware deployment (I2C conflicts, a Plymouth boot stall, and a redeploy not actually picking up the new binary).
+- A shared toast notification component (`app_shell.html`) for save/action success feedback, matching every mockup's pattern — previously the running app had no positive confirmation anywhere, only inline error text on failure. Wired into the fan curve editor's save and the System page's units toggle.
+- A live "now: NN°C → NN%" indicator on the fan curve chart (badge plus a marker line/dot), driven by the existing `stats`/`fan_state` WebSocket messages, matching `04-fan-curve-editor.html`'s current-operating-point marker.
+- Storage & RAID page: a Role column classifying each disk as a RAID member or `NN% full`, plus severity-banded (good/warn/crit) coloring on the usage progress bar and temperature reading, matching `05-storage-raid.html`.
+
+### Fixed
+
+- Web temperature displays didn't all honor the configured unit setting — some pages/panels stayed hardcoded to Celsius after switching to Fahrenheit. All temperature output now goes through one shared `TempUnit::convert_c`/`suffix` conversion.
+- Storage page disk-usage matching compared a mount path (e.g. `/`) against a device name (e.g. `sda`), which essentially never matches — usage always showed `—`. Fixed by matching against `df`'s `Filesystem` column instead, via a new `filesystem_belongs_to_device` leaf-component matcher (also reused for RAID-membership matching).
+- `.btn` had a blanket `width:100%` meant only for the single-column auth forms (login/setup/change-password), but was reused unscoped elsewhere — Save/Reset buttons on the fan curve page would have stretched full-width, and `.btn.ghost` was never actually styled. Scoped the full-width rule to those forms and the sidebar logout button, and added the missing ghost variant.
+- The System page's Celsius/Fahrenheit selector only changed text color on the active option, unlike every other selector control in the app; restored the mockup's raised background-pill highlight.
 
 ## [v0.3.0] - 2026-07-15
 

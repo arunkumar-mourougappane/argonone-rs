@@ -16,10 +16,40 @@
   See docs/releases/README.md for the full archive convention.
 -->
 
-## Highlights
+# Release Notes — v0.4.0
 
-_Describe what's shipping in the next release._
+## Overview
 
-## What's next
+v0.4.0 is **Core dashboard: fan control, storage, system** — the highest-value milestone, replacing `argonone-fanconfig.sh`/`argon-unitconfig.sh` and friends with the web UI the mockups promise. See [docs/ROADMAP.md](docs/ROADMAP.md) for the full v0.1.0 → v0.7.0 plan.
 
-_Point at what's coming after this._
+## What's New
+
+- **Fan curve editor** (`/fan`) — draggable-SVG temperature→speed points, CPU/HDD tabs, a synced editable table, and a live "now: NN°C → NN%" indicator on the chart showing where the current operating point sits. Edits apply to the running control loop immediately via a `tokio::sync::watch` channel, without restarting the daemon or losing hysteresis state.
+- **Server-enforced fan-curve safety floor** — rejects any curve implying less than 25% fan at or above 75°C, checked at every configured breakpoint at/above that ceiling (not just one point), so an unsafe *gap* between two otherwise-safe points is caught too. This is enforced independent of what an operator configures — a client-side-only check can't stop a direct API call from bypassing it.
+- **The HDD curve is now actually applied**, not just editable — the daemon takes `max(cpu_curve_speed, hdd_curve_speed)` each poll, using the hottest of all detected disks' S.M.A.R.T. temperatures, matching the documented "the higher value wins" behavior.
+- **Storage & RAID page** (`/storage`) — per-disk usage and S.M.A.R.T. temperature, a Role column (RAID member vs. `NN% full`), and severity-banded (good/warn/crit) coloring on the usage bar and temperature reading. RAID arrays show level, state, size, and working/failed/spare disk counts parsed from `/proc/mdstat`.
+- **System page** (`/system`) — a Celsius/Fahrenheit toggle applied consistently across every temperature display in the app (dashboard, OLED, fan/storage pages), plus firmware/service info.
+- **`PUT /api/fan/curve/{cpu,hdd}`** and **`GET/PUT /api/settings/units`** — operator+ gated, per the documented API contract.
+- Fan curves and the temperature-unit setting are now DB-backed, replacing the config-file source of truth; `argonone-rs status` reads the same values the running daemon applies, so the two can't drift.
+- A shared toast notification component for save/action success feedback (fan curve save, units toggle) — the app previously had no positive confirmation anywhere, only inline error text on failure.
+- `scripts/deploy.sh`/`scripts/deploy-local.sh` — script the cross-compile → scp → systemd-install sequence, guarding against the real failure modes hit during on-hardware deployment (I2C conflicts, a Plymouth boot stall, a redeploy not picking up the new binary).
+
+## Verified on Hardware
+
+**Not yet done.** Unlike v0.1.0–v0.3.0, this milestone has not been run end-to-end on a real Argon ONE/EON case — development happened without the case or any block devices attached, so the fan safety floor, HDD-curve `max()` behavior, and `lsblk`/`smartctl`/`/proc/mdstat` parsing are covered only by unit tests against synthetic/captured output, not a live run. A hardware pass is required before this release meets the bar every prior one did — see [docs/ROADMAP.md](docs/ROADMAP.md#v040--core-dashboard-fan-control-storage-system)'s own "Not yet done" note.
+
+## Deploying
+
+No new migrations or systemd unit changes since v0.3.0.
+
+```sh
+cargo install argonone-rs
+# or cross-compile / copy the binary to the Pi — see README.md, or use scripts/deploy.sh
+sudo systemctl restart argonone-rs
+```
+
+See [README.md](README.md) for full deployment instructions.
+
+## What's Next
+
+v0.5.0 adds the EON-specific web screens (OLED config, Power & RTC) and the Users/RBAC admin page. See [docs/ROADMAP.md](docs/ROADMAP.md#v050--eon-web-screens--usersrbac-admin).
