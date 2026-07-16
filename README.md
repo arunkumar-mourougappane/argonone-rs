@@ -45,15 +45,27 @@ Requires an `aarch64-unknown-linux-gnu` cross-toolchain on the host (e.g. `brew 
 
 ### Deploying to a Pi
 
-[`scripts/deploy.sh`](scripts/deploy.sh) automates cross-compiling, shipping the binary + systemd unit over SSH, and (re)starting the service — including the fixes for the three real gotchas in Troubleshooting below (wrong-arch binary, the old Python daemon's I2C conflict, and the Plymouth boot-stall):
+Two scripts, same install logic, pick based on where you're running from:
 
-```sh
-scripts/deploy.sh <ssh-host>              # e.g. scripts/deploy.sh pi@192.168.1.50
-scripts/deploy.sh <ssh-host> --skip-build # reuse the last cross-compiled binary
-scripts/deploy.sh <ssh-host> --no-restart # copy files only, don't touch the running service
-```
+- **From your dev machine, over SSH** — [`scripts/deploy.sh`](scripts/deploy.sh) cross-compiles, ships the binary + systemd unit + `deploy-local.sh` itself to the Pi, and runs it there:
 
-This doesn't do the one-time hardware setup (enabling I2C in `/boot/firmware/config.txt`, which needs a reboot) — see Installation above for that, once, before the first deploy.
+  ```sh
+  scripts/deploy.sh <ssh-host>              # e.g. scripts/deploy.sh pi@192.168.1.50
+  scripts/deploy.sh <ssh-host> --skip-build # reuse the last cross-compiled binary
+  scripts/deploy.sh <ssh-host> --no-restart # copy files only, don't touch the running service
+  scripts/deploy.sh <ssh-host> --yes        # don't prompt before disabling a conflicting argononed.service
+  ```
+
+- **Already on the Pi** (e.g. after `git clone`/`git pull`) — [`scripts/deploy-local.sh`](scripts/deploy-local.sh) builds natively and installs directly, no SSH involved:
+
+  ```sh
+  scripts/deploy-local.sh                 # cargo build --release, then install + restart
+  scripts/deploy-local.sh --skip-build    # reuse the last local build
+  ```
+
+Both guard the real gotchas in Troubleshooting below (the old Python daemon's I2C conflict, the Plymouth boot-stall) and restart — not just `enable --now`, which no-ops on an already-running service — so a redeploy actually picks up the new binary.
+
+Neither does the one-time hardware setup (enabling I2C in `/boot/firmware/config.txt`, which needs a reboot) — see Installation above for that, once, before the first deploy.
 
 ## Usage
 
