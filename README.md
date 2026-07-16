@@ -43,6 +43,18 @@ CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-unknown-linux-gnu-gcc \
 
 Requires an `aarch64-unknown-linux-gnu` cross-toolchain on the host (e.g. `brew install aarch64-unknown-linux-gnu` on macOS).
 
+### Deploying to a Pi
+
+[`scripts/deploy.sh`](scripts/deploy.sh) automates cross-compiling, shipping the binary + systemd unit over SSH, and (re)starting the service — including the fixes for the three real gotchas in Troubleshooting below (wrong-arch binary, the old Python daemon's I2C conflict, and the Plymouth boot-stall):
+
+```sh
+scripts/deploy.sh <ssh-host>              # e.g. scripts/deploy.sh pi@192.168.1.50
+scripts/deploy.sh <ssh-host> --skip-build # reuse the last cross-compiled binary
+scripts/deploy.sh <ssh-host> --no-restart # copy files only, don't touch the running service
+```
+
+This doesn't do the one-time hardware setup (enabling I2C in `/boot/firmware/config.txt`, which needs a reboot) — see Installation above for that, once, before the first deploy.
+
 ## Usage
 
 ```sh
