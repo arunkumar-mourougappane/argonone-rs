@@ -29,11 +29,20 @@
     {% block main %}{% endblock %}
   </main>
 </div>
+<div class="toast" id="toast"><span class="toast-dot"></span><span id="toastMsg"></span></div>
 <script>
 function formatTemp(celsius, unit) {
   if (celsius == null) return 'n/a';
   var value = unit === 'F' ? (celsius * 9 / 5 + 32) : celsius;
   return value.toFixed(1) + '°' + (unit || 'C');
+}
+
+function showToast(msg) {
+  var toast = document.getElementById('toast');
+  document.getElementById('toastMsg').textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(function () { toast.classList.remove('show'); }, 2400);
 }
 
 document.body.addEventListener('htmx:wsAfterMessage', function (evt) {

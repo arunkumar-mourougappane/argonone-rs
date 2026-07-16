@@ -6,12 +6,17 @@
 .tabs button{border:none;background:none;font-family:var(--font-ui);font-size:12.5px;font-weight:600;padding:7px 16px;border-radius:7px;color:var(--muted);cursor:pointer;}
 .tabs button.active{background:var(--panel);color:var(--text);box-shadow:var(--shadow);}
 .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px 22px;max-width:680px;}
+.card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+.card-title{font-weight:600;font-size:14px;}
+.badge{font-family:var(--font-mono);font-size:10.5px;padding:3px 9px;border-radius:20px;font-weight:600;background:var(--good-soft);color:var(--good);}
 .chart-wrap{position:relative;margin:14px 0 4px;}
 .chart-wrap svg{width:100%;height:280px;overflow:visible;}
 .axis-label{font-family:var(--font-mono);font-size:10px;fill:var(--muted);}
 .gridline{stroke:var(--border);stroke-width:1;}
 .curve-area{fill:var(--accent-soft);opacity:.55;}
 .curve-line{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+.now-line{stroke:var(--warn);stroke-width:1.4;stroke-dasharray:3 3;}
+.now-dot{fill:var(--warn);}
 .pt{fill:var(--panel);stroke:var(--accent);stroke-width:2.5;cursor:grab;}
 .pt.readonly{cursor:default;}
 table.pts{width:100%;border-collapse:collapse;margin-top:20px;font-size:13px;}
@@ -36,6 +41,10 @@ table.pts input{width:64px;padding:6px 8px;border-radius:6px;border:1px solid va
 </div>
 
 <div class="card">
+  <div class="card-head">
+    <div class="card-title">Temperature → fan speed</div>
+    <span class="badge" id="nowBadge">now: —</span>
+  </div>
   <div class="chart-wrap">
     <svg viewBox="0 0 620 280" preserveAspectRatio="none" id="chart">
       <g>
@@ -54,6 +63,8 @@ table.pts input{width:64px;padding:6px 8px;border-radius:6px;border:1px solid va
       </g>
       <path class="curve-area" id="curveArea"/>
       <path class="curve-line" id="curveLine"/>
+      <line class="now-line" id="nowLine" x1="0" y1="0" x2="0" y2="240" style="display:none"/>
+      <circle class="now-dot" id="nowDot" r="4" style="display:none"/>
       <g id="ptsGroup"></g>
     </svg>
   </div>
@@ -91,7 +102,11 @@ const curveLine = document.getElementById('curveLine');
 const curveArea = document.getElementById('curveArea');
 const ptsBody = document.getElementById('ptsBody');
 const errMsg = document.getElementById('errMsg');
+const nowBadge = document.getElementById('nowBadge');
+const nowLine = document.getElementById('nowLine');
+const nowDot = document.getElementById('nowDot');
 const X0=50, X1=600, T0=0, T1=100, Y0=240, Y1=60;
+let liveTemp = null, liveFanPct = null;
 
 let current = 'cpu';
 let points = {
@@ -106,6 +121,29 @@ function yToPct(y){ return Math.round(((y-Y0)/(Y1-Y0))*100); }
 function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
 
 function currentPoints(){ return points[current]; }
+
+function updateNowIndicator(){
+  if (liveTemp == null || liveFanPct == null) return;
+  const x = clamp(tempToX(liveTemp), X0, X1);
+  const y = pctToY(clamp(liveFanPct, 0, 100));
+  nowLine.setAttribute('x1', x); nowLine.setAttribute('x2', x);
+  nowLine.style.display = '';
+  nowDot.setAttribute('cx', x); nowDot.setAttribute('cy', y);
+  nowDot.style.display = '';
+  nowBadge.textContent = `now: ${Math.round(liveTemp)}°C → ${Math.round(liveFanPct)}%`;
+}
+
+document.body.addEventListener('htmx:wsAfterMessage', function (evt) {
+  let data;
+  try { data = JSON.parse(evt.detail.message); } catch (e) { return; }
+  if (data.type === 'stats' && data.cpu_temp_c != null) {
+    liveTemp = data.cpu_temp_c;
+    updateNowIndicator();
+  } else if (data.type === 'fan_state' && data.current_pct != null) {
+    liveFanPct = data.current_pct;
+    updateNowIndicator();
+  }
+});
 
 function render(){
   const pts = currentPoints().slice().sort((a,b) => a[0]-b[0]);
@@ -200,6 +238,7 @@ if (CAN_EDIT) {
       return;
     }
     errMsg.textContent = '';
+    showToast(`${current.toUpperCase()} curve saved`);
   });
 }
 
