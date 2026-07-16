@@ -105,7 +105,7 @@ The web UI's foundation (setup, login, session/RBAC) and its core dashboard (fan
 
 - [docs/research-rust-backend-webui.md](docs/research-rust-backend-webui.md) — what the existing Argon40 Python stack does, proposed Rust daemon architecture, and web UI/UX research (target: homelab/NAS self-hosters).
 - [docs/research-auth-persistence-service.md](docs/research-auth-persistence-service.md) — forced first-run admin setup, multi-user RBAC, SQLite persistence, and systemd service install for Ubuntu 26.04 on Raspberry Pi.
-- [docs/mockups/](docs/mockups/00-index.html) — interactive HTML mockups of the full web UI (setup, login, dashboard, fan curve editor, storage/RAID, OLED display, users, system settings) — the target design; only setup/login/a bare dashboard are real so far. Open `00-index.html` in a browser to start.
+- [docs/mockups/](docs/mockups/00-index.html) — interactive HTML mockups of the full web UI (setup, login, dashboard, fan curve editor, storage/RAID, OLED display, users, system settings) — the target design; setup, login, dashboard, fan curve editor, Storage & RAID, and the units/firmware slice of System are real, OLED display/Power & RTC/Users are still mockup-only. Open `00-index.html` in a browser to start.
 
 ## License
 
