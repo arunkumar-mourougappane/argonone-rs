@@ -136,12 +136,16 @@ works end-to-end.
   (A§3.2, A§4.2); the `argonone` service-account privilege drop
   (A§4.1) stays deferred to v0.7.0's `.deb` maintainer scripts, per the
   roadmap's original split — `User=root` still, documented inline.
-- **Not yet done**: verified on real hardware (both v0.1.0 and v0.2.0
-  shipped only after an on-device pass) — v0.3.0 has been verified
-  end-to-end against the compiled binary (setup/login/session/
-  must_change_pw/lockout/WebSocket/admin-reset/CLI-reset all exercised
-  manually plus in an automated route-test suite), but not yet run on
-  the actual Raspberry Pi target.
+- Verified on real Argon ONE hardware (2026-07-15) — board
+  auto-detection, `GET /api/status` returning live sysinfo (real CPU
+  temp/RAM%, not the no-op stub), and the full setup/login/session
+  flow all confirmed over the network from a browser on the LAN,
+  matching the on-hardware verification bar v0.1.0/v0.2.0 shipped
+  with. (Deploy note: `systemd-networkd-wait-online`/`plymouth-quit-
+  wait` can stall the unit's `After=network-online.target` boot
+  ordering on a fresh headless image — unrelated to this daemon,
+  documented as a one-off `systemctl stop plymouth-quit-wait.service`
+  fix, not a unit-file defect.)
 
 **Not in scope**: HTTPS (v0.6.0), fan curve editing, any settings screens.
 

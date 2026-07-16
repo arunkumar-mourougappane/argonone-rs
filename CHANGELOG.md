@@ -6,14 +6,19 @@ This file is the permanent, cumulative log across every version. For the prose w
 
 ## [Unreleased]
 
+## [v0.3.0] - 2026-07-15
+
+Web foundation: persistence, auth, live shell — the first version with a web server, scoped to infrastructure rather than feature screens. Still no HTTPS, fan curve editing, or settings screens. See [docs/ROADMAP.md](docs/ROADMAP.md) for what's next.
+
 ### Added
 
-- Web foundation (v0.3.0, A§1-2, W§2.5, §3.5): SQLite persistence (`users`/`settings`/`fan_curve_points`/`audit_log`, WAL mode, embedded `sqlx::migrate!()`), forced first-run admin setup wizard with the singleton-race guard, Argon2id auth via `axum-login` + SQLite-backed `tower-sessions`, three-role RBAC (`admin`/`operator`/`viewer`), a bare authenticated `axum` + `minijinja` + `htmx` shell, and a live `stats`/`fan_state` WebSocket over `htmx-ext-ws`.
+- Web foundation (A§1-2, W§2.5, §3.5): SQLite persistence (`users`/`settings`/`fan_curve_points`/`audit_log`, WAL mode, embedded `sqlx::migrate!()`), forced first-run admin setup wizard with the singleton-race guard, Argon2id auth via `axum-login` + SQLite-backed `tower-sessions`, three-role RBAC (`admin`/`operator`/`viewer`), a bare authenticated `axum` + `minijinja` + `htmx` shell, and a live `stats`/`fan_state` WebSocket over `htmx-ext-ws`.
 - Password recovery mechanism (A§1.2): admin-issued reset (`POST /api/users/{id}/reset-password`) and a CLI fallback (`argonone-rs admin reset-password --username <u>`) for the no-admin-can-login case — the Users admin *page* itself is still v0.5.0.
 - `must_change_pw` forced-change flow and a DB-backed failed-login throttle (5 attempts, 15-minute lockout, A§2.2).
 - `GET /api/status` (auth-gated) doubling as a health check, reporting hardware presence alongside CPU/RAM/temp/fan stats.
 - `htmx`/`htmx-ext-ws` vendored from upstream GitHub releases (not a CDN) into `assets/`, embedded into the binary — keeps the single-binary deploy story intact; see `assets/VENDORED.md` for provenance.
 - systemd unit gains `StateDirectory=argonone-rs` for the new SQLite state file (A§3.2); the `argonone` service-account privilege drop stays deferred to v0.7.0's packaging scope.
+- v0.3.0 verified end-to-end on real Argon ONE hardware: board auto-detection, the full setup/login/session flow, and `GET /api/status` returning live sysinfo all confirmed over the network from a browser on the LAN.
 
 ### Fixed
 

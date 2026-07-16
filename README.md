@@ -13,7 +13,7 @@ A Rust daemon and CLI for Argon ONE/EON Raspberry Pi cases — I2C fan control, 
 
 [v0.2.0](docs/ROADMAP.md#v020--eon-extras-oled--rtc) (EON extras: OLED dashboard + RTC wake/sleep scheduling) and [v0.1.0](docs/ROADMAP.md#v010--core-hardware-daemon-argon-one-parity) (core hardware daemon: I2C fan control, GPIO power-button monitoring, sysinfo collection, board auto-detection) are released and verified on real Argon ONE/EON hardware. Every hardware access goes through a `HardwareBackend` trait with a no-op fallback, so the daemon runs (and is testable) without the case attached.
 
-[v0.3.0](docs/ROADMAP.md#v030--web-foundation-persistence-auth-live-shell) — the web foundation (SQLite persistence, forced first-run admin setup, Argon2id auth with three-role RBAC, a bare authenticated `htmx`/`minijinja` shell, and a live WebSocket status strip) — is implemented and covered by an automated route-test suite plus a manual end-to-end pass, but **not yet verified on real Raspberry Pi hardware**, so it isn't tagged/released yet. See [docs/ROADMAP.md](docs/ROADMAP.md) for the full v0.1.0 → v0.7.0 plan and [CHANGELOG.md](CHANGELOG.md) for what's landed so far.
+[v0.3.0](docs/ROADMAP.md#v030--web-foundation-persistence-auth-live-shell) — the web foundation (SQLite persistence, forced first-run admin setup, Argon2id auth with three-role RBAC, a bare authenticated `htmx`/`minijinja` shell, and a live WebSocket status strip) — is implemented and verified on real Argon ONE hardware (setup/login/session all confirmed over the network from a browser). See [docs/ROADMAP.md](docs/ROADMAP.md) for the full v0.1.0 → v0.7.0 plan and [CHANGELOG.md](CHANGELOG.md) for what's landed so far.
 
 ## Installation
 
