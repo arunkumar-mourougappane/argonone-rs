@@ -26,7 +26,7 @@ async fn main() {
         Command::Service => service::run().await,
         Command::Shutdown => service::shutdown_once(),
         Command::Fanoff => service::fanoff_once(),
-        Command::Status => service::print_status(),
+        Command::Status => service::print_status().await,
         Command::Admin { command } => match command {
             AdminCommand::ResetPassword { username } => admin::reset_password(&username).await,
         },

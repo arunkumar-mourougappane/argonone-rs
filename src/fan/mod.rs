@@ -8,6 +8,8 @@ use crate::config::FanCurve;
 use crate::hardware::FanBackend;
 use std::time::{Duration, Instant};
 
+pub mod curve_store;
+
 pub const POLL_INTERVAL: Duration = Duration::from_secs(30);
 pub const DECREASE_HYSTERESIS: Duration = Duration::from_secs(30);
 
@@ -37,15 +39,28 @@ impl<T: TempSource> FanController<T> {
         }
     }
 
-    /// Run one poll cycle: read temp, decide the new speed per the
-    /// hysteresis rule, and apply it via `backend` if it changed. Returns
-    /// the speed actually applied (or the unchanged current speed).
-    pub fn tick(&mut self, backend: &dyn FanBackend, now: Instant) -> u8 {
+    /// Swaps in a newly-edited curve (W§2.7's `watch::channel` live
+    /// update) without touching `current_speed`/`pending_decrease` — a
+    /// curve edit must not reset the hysteresis window an operator might
+    /// currently be mid-way through waiting out.
+    pub fn set_curve(&mut self, curve: FanCurve) {
+        self.curve = curve;
+    }
+
+    /// Run one poll cycle, but never let the applied speed drop below
+    /// `floor_pct` — used to fold the HDD curve's demand in: "if the HDD
+    /// curve requests a higher speed than the CPU curve, the higher value
+    /// wins" (mirrors `04-fan-curve-editor.html`'s documented behavior).
+    /// The floor participates in the same hysteresis rule as the CPU
+    /// curve's own target — it's a *demand*, not a bypass, so a
+    /// momentary HDD temp spike still respects the decrease-hold window
+    /// on the way back down.
+    pub fn tick_with_floor(&mut self, backend: &dyn FanBackend, now: Instant, floor_pct: u8) -> u8 {
         let Some(temp) = self.temp_source.read_cpu_temp_c() else {
             tracing::warn!("fan control: temperature unavailable this poll, holding current speed");
             return self.current_speed;
         };
-        let target = self.curve.speed_for(temp);
+        let target = self.curve.speed_for(temp).max(floor_pct);
 
         let new_speed = if target >= self.current_speed {
             self.pending_decrease = None;
@@ -114,7 +129,7 @@ mod tests {
     fn increase_applies_immediately() {
         let mut ctl = FanController::new(FanCurve::default_curve(), FixedTemp(70.0));
         let fan = RecordingFan(std::sync::Mutex::new(vec![]));
-        let speed = ctl.tick(&fan, Instant::now());
+        let speed = ctl.tick_with_floor(&fan, Instant::now(), 0);
         assert_eq!(speed, 100);
         assert_eq!(fan.0.lock().unwrap().as_slice(), &[100]);
     }
@@ -124,11 +139,11 @@ mod tests {
         let mut ctl = FanController::new(FanCurve::default_curve(), FixedTemp(70.0));
         let fan = RecordingFan(std::sync::Mutex::new(vec![]));
         let t0 = Instant::now();
-        assert_eq!(ctl.tick(&fan, t0), 100);
+        assert_eq!(ctl.tick_with_floor(&fan, t0, 0), 100);
 
         // Temp drops; the request to decrease shouldn't apply immediately.
         ctl.temp_source = FixedTemp(40.0);
-        let held = ctl.tick(&fan, t0 + Duration::from_secs(5));
+        let held = ctl.tick_with_floor(&fan, t0 + Duration::from_secs(5), 0);
         assert_eq!(
             held, 100,
             "speed should still be held at 100 before hysteresis elapses"
@@ -136,7 +151,7 @@ mod tests {
 
         // After the hysteresis window, with the same lower target sustained,
         // the decrease should apply.
-        let applied = ctl.tick(&fan, t0 + Duration::from_secs(35));
+        let applied = ctl.tick_with_floor(&fan, t0 + Duration::from_secs(35), 0);
         assert_eq!(applied, 0);
     }
 
@@ -156,7 +171,7 @@ mod tests {
     #[test]
     fn backend_failure_keeps_previous_speed() {
         let mut ctl = FanController::new(FanCurve::default_curve(), FixedTemp(70.0));
-        let speed = ctl.tick(&FailingFan, Instant::now());
+        let speed = ctl.tick_with_floor(&FailingFan, Instant::now(), 0);
         assert_eq!(
             speed, 0,
             "set_speed failed, so current_speed stays at its initial value"
@@ -168,23 +183,26 @@ mod tests {
         let mut ctl = FanController::new(FanCurve::default_curve(), FixedTemp(70.0));
         let fan = RecordingFan(std::sync::Mutex::new(vec![]));
         let t0 = Instant::now();
-        assert_eq!(ctl.tick(&fan, t0), 100);
+        assert_eq!(ctl.tick_with_floor(&fan, t0, 0), 100);
 
         // Temp drops to the 55% band first...
         ctl.temp_source = FixedTemp(62.0);
-        assert_eq!(ctl.tick(&fan, t0 + Duration::from_secs(5)), 100);
+        assert_eq!(
+            ctl.tick_with_floor(&fan, t0 + Duration::from_secs(5), 0),
+            100
+        );
 
         // ...then further to the 30% band before the first hold elapsed —
         // the pending target changed, so the window should restart rather
         // than immediately applying once 30s from t0 has passed.
         ctl.temp_source = FixedTemp(56.0);
-        let still_held = ctl.tick(&fan, t0 + Duration::from_secs(32));
+        let still_held = ctl.tick_with_floor(&fan, t0 + Duration::from_secs(32), 0);
         assert_eq!(
             still_held, 100,
             "target changed mid-hold, so hysteresis should restart from the new pending"
         );
 
-        let applied = ctl.tick(&fan, t0 + Duration::from_secs(65));
+        let applied = ctl.tick_with_floor(&fan, t0 + Duration::from_secs(65), 0);
         assert_eq!(applied, 30);
     }
 
@@ -198,8 +216,53 @@ mod tests {
         }
         let mut ctl = FanController::new(FanCurve::default_curve(), FlakyTemp(true));
         let fan = RecordingFan(std::sync::Mutex::new(vec![]));
-        assert_eq!(ctl.tick(&fan, Instant::now()), 100);
+        assert_eq!(ctl.tick_with_floor(&fan, Instant::now(), 0), 100);
         ctl.temp_source = FlakyTemp(false);
-        assert_eq!(ctl.tick(&fan, Instant::now()), 100);
+        assert_eq!(ctl.tick_with_floor(&fan, Instant::now(), 0), 100);
+    }
+
+    #[test]
+    fn set_curve_swaps_curve_without_resetting_hysteresis_state() {
+        let mut ctl = FanController::new(FanCurve::default_curve(), FixedTemp(70.0));
+        let fan = RecordingFan(std::sync::Mutex::new(vec![]));
+        let t0 = Instant::now();
+        assert_eq!(ctl.tick_with_floor(&fan, t0, 0), 100);
+
+        // Start a pending decrease under the old curve...
+        ctl.temp_source = FixedTemp(40.0);
+        assert_eq!(
+            ctl.tick_with_floor(&fan, t0 + Duration::from_secs(5), 0),
+            100
+        );
+
+        // ...swap curves mid-hold...
+        ctl.set_curve(FanCurve(vec![crate::config::CurvePoint {
+            temp_c: 30,
+            speed_pct: 0,
+        }]));
+
+        // ...the pending decrease (target 0, matching the new curve's
+        // target for 40C too) still resolves once its original window
+        // elapses, proving current_speed/pending_decrease survived the
+        // swap rather than being reset to a fresh controller's defaults.
+        let applied = ctl.tick_with_floor(&fan, t0 + Duration::from_secs(35), 0);
+        assert_eq!(applied, 0);
+    }
+
+    #[test]
+    fn tick_with_floor_lets_the_higher_demand_win() {
+        // CPU curve alone would give 0% at 40C, but an HDD-curve-derived
+        // floor of 55% should win, matching "the higher value wins."
+        let mut ctl = FanController::new(FanCurve::default_curve(), FixedTemp(40.0));
+        let fan = RecordingFan(std::sync::Mutex::new(vec![]));
+        let applied = ctl.tick_with_floor(&fan, Instant::now(), 55);
+        assert_eq!(applied, 55);
+    }
+
+    #[test]
+    fn tick_with_floor_zero_floor_behaves_like_cpu_curve_alone() {
+        let mut ctl = FanController::new(FanCurve::default_curve(), FixedTemp(70.0));
+        let fan = RecordingFan(std::sync::Mutex::new(vec![]));
+        assert_eq!(ctl.tick_with_floor(&fan, Instant::now(), 0), 100);
     }
 }

@@ -157,18 +157,46 @@ The highest-value milestone — this is what actually replaces
 `argonone-fanconfig.sh` and friends with the web UI the mockups promise.
 
 - Fan curve editor: draggable SVG points, CPU/HDD tabs, synced table
-  (mirrors `04-fan-curve-editor.html`)
+  (mirrors `04-fan-curve-editor.html`). Done — `templates/fan_curve.html`,
+  `src/web/fan_curve.rs`.
 - `tokio::sync::watch` channel from the REST write handler into the live
   control loop — edits apply without restarting the daemon or losing
-  hysteresis state (W§2.7)
+  hysteresis state (W§2.7). Done — `FanController::set_curve`/
+  `tick_with_floor` in `src/fan/mod.rs`, wired in `service::run`.
 - Server-enforced fan-curve safety floor, independent of stored config
   (W§2.8) — closes the "0% fan at 90°C" gap before the editor ships, not
-  after
-- Storage & RAID page (`05-storage-raid.html`)
+  after. Done — `FanCurve::violates_safety_floor` in `src/config/mod.rs`,
+  checks every configured breakpoint at/above 75°C plus 75°C itself (not
+  just a single point), so a curve with an unsafe *gap* between two
+  otherwise-safe points is caught too.
+- Storage & RAID page (`05-storage-raid.html`). Done —
+  `templates/storage.html`, `src/web/storage.rs`; disk temperature via
+  `smartctl` and per-array RAID detail (size, working/failed/spare
+  counts, member devices) parsed from `/proc/mdstat` — both new sysinfo
+  surface, not previously implemented despite W§1.2 documenting the
+  approach.
 - System page: units toggle, firmware/service info (`08-system-settings.html`,
-  minus HTTPS/IR/RTC which land in later milestones)
+  minus HTTPS/IR/RTC which land in later milestones). Done —
+  `templates/system.html`, `src/web/system.rs`.
 - `PUT /api/fan/curve/{cpu,hdd}`, `GET/PUT /api/settings/units` per the
-  API contract (W§2.5)
+  API contract (W§2.5). Done.
+- **Beyond the original bullet list**: the HDD curve is now actually
+  *applied*, not just editable — the daemon takes `max(cpu_curve_speed,
+  hdd_curve_speed)` each poll (`04-fan-curve-editor.html`'s documented
+  "the higher value wins" behavior), using the hottest of all detected
+  disks' S.M.A.R.T. temperatures. Without this the HDD tab would save
+  successfully but have zero effect, which felt like a real gap to leave
+  in rather than a defensible scope cut.
+- Fan curves and the units setting are now DB-backed (`fan_curve_points`/
+  `settings` tables), replacing the config-file source of truth per the
+  plan already recorded in `src/config/mod.rs`'s own doc comment and
+  A§3.4 — the legacy files stay readable only for a one-time import,
+  still deferred to v0.7.0. `argonone-rs status` reads the same DB values
+  the running daemon uses, so the two can't drift out of sync.
+- **Not yet done**: verified on real hardware with actual disks/RAID
+  attached (this dev pass ran on a Pi/Mac with no block devices to
+  exercise `lsblk`/`smartctl`/`mdstat` against real data) — v0.4.0 needs
+  that pass, same bar as v0.1.0-v0.3.0, before it's considered complete.
 
 ---
 

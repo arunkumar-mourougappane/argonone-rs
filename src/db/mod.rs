@@ -7,6 +7,8 @@ use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 use std::path::Path;
 
+pub mod settings;
+
 pub type DbPool = SqlitePool;
 
 /// Default path under systemd's `StateDirectory=` (A§3.2) — real disk, not

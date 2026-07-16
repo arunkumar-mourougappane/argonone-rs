@@ -1,0 +1,208 @@
+{% extends "app_shell.html" %}
+{% block title %}Fan control — argonone{% endblock %}
+{% block main %}
+<style>
+.tabs{display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:3px;width:max-content;margin-bottom:18px;}
+.tabs button{border:none;background:none;font-family:var(--font-ui);font-size:12.5px;font-weight:600;padding:7px 16px;border-radius:7px;color:var(--muted);cursor:pointer;}
+.tabs button.active{background:var(--panel);color:var(--text);box-shadow:var(--shadow);}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px 22px;max-width:680px;}
+.chart-wrap{position:relative;margin:14px 0 4px;}
+.chart-wrap svg{width:100%;height:280px;overflow:visible;}
+.axis-label{font-family:var(--font-mono);font-size:10px;fill:var(--muted);}
+.gridline{stroke:var(--border);stroke-width:1;}
+.curve-area{fill:var(--accent-soft);opacity:.55;}
+.curve-line{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+.pt{fill:var(--panel);stroke:var(--accent);stroke-width:2.5;cursor:grab;}
+.pt.readonly{cursor:default;}
+table.pts{width:100%;border-collapse:collapse;margin-top:20px;font-size:13px;}
+table.pts th{text-align:left;font-family:var(--font-mono);font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600;padding:0 10px 8px;border-bottom:1px solid var(--border);}
+table.pts td{padding:9px 10px;border-bottom:1px solid var(--border);}
+table.pts input{width:64px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:12.5px;}
+.rm{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;}
+.addpt{margin-top:12px;background:none;border:1px dashed var(--border);color:var(--accent);font-family:var(--font-ui);font-weight:600;font-size:12.5px;padding:8px 14px;border-radius:8px;cursor:pointer;}
+.actions{display:flex;justify-content:space-between;align-items:center;margin-top:22px;}
+.err{color:var(--crit);font-size:12.5px;margin-top:10px;min-height:16px;}
+.note{display:flex;gap:10px;background:var(--bg);border-radius:10px;padding:11px 14px;margin-top:18px;}
+.note p{margin:0;font-size:12px;line-height:1.55;color:var(--muted);}
+</style>
+<div class="page-head">
+  <h1>Fan control</h1>
+  <p class="lede">Drag points to change the temperature→speed curve. Changes apply immediately once saved.</p>
+</div>
+
+<div class="tabs">
+  <button class="active" data-curve="cpu">CPU curve</button>
+  <button data-curve="hdd">HDD curve</button>
+</div>
+
+<div class="card">
+  <div class="chart-wrap">
+    <svg viewBox="0 0 620 280" preserveAspectRatio="none" id="chart">
+      <g>
+        <line class="gridline" x1="50" y1="10" x2="50" y2="240"/>
+        <line class="gridline" x1="50" y1="240" x2="600" y2="240"/>
+        <line class="gridline" x1="50" y1="180" x2="600" y2="180" stroke-dasharray="2 4"/>
+        <line class="gridline" x1="50" y1="120" x2="600" y2="120" stroke-dasharray="2 4"/>
+        <line class="gridline" x1="50" y1="60"  x2="600" y2="60"  stroke-dasharray="2 4"/>
+        <text class="axis-label" x="14" y="244">0%</text>
+        <text class="axis-label" x="8"  y="184">30%</text>
+        <text class="axis-label" x="8"  y="124">60%</text>
+        <text class="axis-label" x="14" y="64">100%</text>
+        <text class="axis-label" x="46"  y="258">0°C</text>
+        <text class="axis-label" x="320" y="258">50°C</text>
+        <text class="axis-label" x="580" y="258">100°C</text>
+      </g>
+      <path class="curve-area" id="curveArea"/>
+      <path class="curve-line" id="curveLine"/>
+      <g id="ptsGroup"></g>
+    </svg>
+  </div>
+
+  <table class="pts" id="ptsTable">
+    <thead><tr><th>Temperature</th><th>Fan speed</th><th></th></tr></thead>
+    <tbody id="ptsBody"></tbody>
+  </table>
+  {% if can_edit %}
+  <button class="addpt" id="addPt">+ Add point</button>
+
+  <div class="actions">
+    <button class="btn ghost" id="resetBtn" type="button">Reset to default</button>
+    <button class="btn" id="saveBtn" type="button">Save curve</button>
+  </div>
+  <div class="err" id="errMsg"></div>
+  {% endif %}
+
+  <div class="note">
+    <p>Fan speed <b>reductions</b> are delayed 30 seconds after the temperature drops, to avoid audible fluctuation. Increases apply immediately. If the HDD curve requests a higher speed than the CPU curve, the higher value wins. The server always enforces at least 25% fan at or above 75°C, regardless of what's configured here.</p>
+  </div>
+</div>
+
+{% endblock %}
+{% block page_script %}
+<script>
+const CAN_EDIT = {{ can_edit | tojson }};
+const DATA = { cpu: {{ cpu_points | tojson }}, hdd: {{ hdd_points | tojson }} };
+const DEFAULT_CPU = [[30,0],[55,30],[60,55],[65,100]];
+const DEFAULT_HDD = [[30,0],[40,30],[50,55],[55,100]];
+
+const svg = document.getElementById('chart');
+const ptsGroup = document.getElementById('ptsGroup');
+const curveLine = document.getElementById('curveLine');
+const curveArea = document.getElementById('curveArea');
+const ptsBody = document.getElementById('ptsBody');
+const errMsg = document.getElementById('errMsg');
+const X0=50, X1=600, T0=0, T1=100, Y0=240, Y1=60;
+
+let current = 'cpu';
+let points = {
+  cpu: DATA.cpu.length ? DATA.cpu.map(p => [p.temp_c, p.fan_pct]) : DEFAULT_CPU,
+  hdd: DATA.hdd.length ? DATA.hdd.map(p => [p.temp_c, p.fan_pct]) : DEFAULT_HDD,
+};
+
+function tempToX(t){ return X0 + (t-T0) * (X1-X0)/(T1-T0); }
+function xToTemp(x){ return Math.round(T0 + (x-X0) * (T1-T0)/(X1-X0)); }
+function pctToY(p){ return Y0 + (p/100) * (Y1-Y0); }
+function yToPct(y){ return Math.round(((y-Y0)/(Y1-Y0))*100); }
+function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+
+function currentPoints(){ return points[current]; }
+
+function render(){
+  const pts = currentPoints().slice().sort((a,b) => a[0]-b[0]);
+  points[current] = pts;
+
+  // SVG points + curve path
+  ptsGroup.innerHTML = '';
+  const coords = pts.map(([t,s]) => ({x: tempToX(t), y: pctToY(s)}));
+  coords.forEach((c, i) => {
+    const el = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    el.setAttribute('class', 'pt' + (CAN_EDIT ? '' : ' readonly'));
+    el.setAttribute('cx', c.x); el.setAttribute('cy', c.y); el.setAttribute('r', 6);
+    el.setAttribute('data-i', i);
+    if (CAN_EDIT) el.addEventListener('pointerdown', onPointerDown);
+    ptsGroup.appendChild(el);
+  });
+  const d = 'M' + coords.map(c => `${c.x},${c.y}`).join(' L');
+  curveLine.setAttribute('d', d);
+  curveArea.setAttribute('d', d + ` L${coords[coords.length-1].x},240 L${coords[0].x},240 Z`);
+
+  // table
+  ptsBody.innerHTML = '';
+  pts.forEach(([t,s], i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td><input data-i="${i}" data-axis="t" value="${t}" type="number" ${CAN_EDIT?'':'disabled'}>°C</td>` +
+      `<td><input data-i="${i}" data-axis="s" value="${s}" type="number" ${CAN_EDIT?'':'disabled'}>%</td>` +
+      `<td>${CAN_EDIT ? '<button class="rm" data-i="'+i+'">×</button>' : ''}</td>`;
+    ptsBody.appendChild(tr);
+  });
+  if (CAN_EDIT) {
+    ptsBody.querySelectorAll('input').forEach(inp => inp.addEventListener('change', onTableEdit));
+    ptsBody.querySelectorAll('.rm').forEach(btn => btn.addEventListener('click', () => {
+      const i = +btn.getAttribute('data-i');
+      if (currentPoints().length > 1) { currentPoints().splice(i, 1); render(); }
+    }));
+  }
+}
+
+function onTableEdit(e){
+  const i = +e.target.getAttribute('data-i');
+  const axis = e.target.getAttribute('data-axis');
+  const v = clamp(+e.target.value, axis === 't' ? T0 : 0, axis === 't' ? T1 : 100);
+  currentPoints()[i][axis === 't' ? 0 : 1] = v;
+  render();
+}
+
+let dragging = null;
+function onPointerDown(e){
+  dragging = +e.target.getAttribute('data-i');
+  e.target.setPointerCapture(e.pointerId);
+}
+svg.addEventListener('pointermove', (e) => {
+  if (dragging === null) return;
+  const r = svg.getBoundingClientRect();
+  const x = (e.clientX - r.left) / r.width * 620;
+  const y = (e.clientY - r.top) / r.height * 280;
+  currentPoints()[dragging] = [clamp(xToTemp(x), T0, T1), clamp(yToPct(y), 0, 100)];
+  render();
+});
+window.addEventListener('pointerup', () => { dragging = null; });
+
+document.querySelectorAll('.tabs button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    current = btn.getAttribute('data-curve');
+    errMsg.textContent = '';
+    render();
+  });
+});
+
+if (CAN_EDIT) {
+  document.getElementById('addPt').addEventListener('click', () => {
+    currentPoints().push([50, 50]);
+    render();
+  });
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    points[current] = (current === 'cpu' ? DEFAULT_CPU : DEFAULT_HDD).map(p => p.slice());
+    render();
+  });
+  document.getElementById('saveBtn').addEventListener('click', async () => {
+    errMsg.textContent = '';
+    const body = { points: currentPoints().map(([t,s]) => ({ temp_c: t, fan_pct: s })) };
+    const resp = await fetch(`/api/fan/curve/${current}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      errMsg.textContent = data.error || `save failed (${resp.status})`;
+      return;
+    }
+    errMsg.textContent = '';
+  });
+}
+
+render();
+</script>
+{% endblock %}

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">A</div>
+      <div class="brand-name">argonone</div>
+    </div>
+    <nav>
+      <a href="/" class="{% if active_page == 'dashboard' %}active{% endif %}">Dashboard</a>
+      <a href="/fan" class="{% if active_page == 'fan' %}active{% endif %}">Fan control</a>
+      <a href="/storage" class="{% if active_page == 'storage' %}active{% endif %}">Storage &amp; RAID</a>
+      <a href="/system" class="{% if active_page == 'system' %}active{% endif %}">System</a>
+    </nav>
+    <div style="margin-top:auto;">
+      <p style="font-size:12px;color:var(--muted);margin:0 0 8px;">{{ username }} · <span class="role-badge">{{ role }}</span></p>
+      <form method="post" action="/logout">
+        <button type="submit" class="btn">Log out</button>
+      </form>
+    </div>
+  </aside>
+  <main>
+    <div id="status-strip" class="status-strip" hx-ext="ws" ws-connect="/api/ws">
+      <span><span class="stat-label">CPU</span><span id="stat-cpu-pct">--</span></span>
+      <span><span class="stat-label">CPU temp</span><span id="stat-cpu-temp">--</span></span>
+      <span><span class="stat-label">RAM</span><span id="stat-ram-pct">--</span></span>
+      <span><span class="stat-label">Fan</span><span id="stat-fan-pct">--</span></span>
+    </div>
+    {% block main %}{% endblock %}
+  </main>
+</div>
+<script>
+document.body.addEventListener('htmx:wsAfterMessage', function (evt) {
+  var data;
+  try { data = JSON.parse(evt.detail.message); } catch (e) { return; }
+  if (data.type === 'stats') {
+    document.getElementById('stat-cpu-pct').textContent = data.cpu_pct != null ? data.cpu_pct.toFixed(0) + '%' : 'n/a';
+    document.getElementById('stat-cpu-temp').textContent = data.cpu_temp_c != null ? data.cpu_temp_c.toFixed(1) + '°C' : 'n/a';
+    document.getElementById('stat-ram-pct').textContent = data.ram_used_pct != null ? data.ram_used_pct.toFixed(0) + '%' : 'n/a';
+  } else if (data.type === 'fan_state') {
+    document.getElementById('stat-fan-pct').textContent = data.current_pct + '%';
+  }
+});
+</script>
+{% block page_script %}{% endblock %}
+{% endblock %}

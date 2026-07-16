@@ -13,7 +13,9 @@ A Rust daemon, CLI, and web UI for Argon ONE/EON Raspberry Pi cases — I2C fan 
 
 [v0.2.0](docs/ROADMAP.md#v020--eon-extras-oled--rtc) (EON extras: OLED dashboard + RTC wake/sleep scheduling) and [v0.1.0](docs/ROADMAP.md#v010--core-hardware-daemon-argon-one-parity) (core hardware daemon: I2C fan control, GPIO power-button monitoring, sysinfo collection, board auto-detection) are released and verified on real Argon ONE/EON hardware. Every hardware access goes through a `HardwareBackend` trait with a no-op fallback, so the daemon runs (and is testable) without the case attached.
 
-[v0.3.0](docs/ROADMAP.md#v030--web-foundation-persistence-auth-live-shell) — the web foundation (SQLite persistence, forced first-run admin setup, Argon2id auth with three-role RBAC, a bare authenticated `htmx`/`minijinja` shell, and a live WebSocket status strip) — is implemented and verified on real Argon ONE hardware (setup/login/session all confirmed over the network from a browser). See [docs/ROADMAP.md](docs/ROADMAP.md) for the full v0.1.0 → v0.7.0 plan and [CHANGELOG.md](CHANGELOG.md) for what's landed so far.
+[v0.3.0](docs/ROADMAP.md#v030--web-foundation-persistence-auth-live-shell) — the web foundation (SQLite persistence, forced first-run admin setup, Argon2id auth with three-role RBAC, a bare authenticated `htmx`/`minijinja` shell, and a live WebSocket status strip) — is released and verified on real Argon ONE hardware.
+
+[v0.4.0](docs/ROADMAP.md#v040--core-dashboard-fan-control-storage-system) — the core dashboard (fan curve editor, Storage & RAID page, System page) — is implemented, route-tested, and manually verified end to end, but **not yet verified against real disks/RAID hardware**, so it isn't tagged/released yet. See [docs/ROADMAP.md](docs/ROADMAP.md) for the full v0.1.0 → v0.7.0 plan and [CHANGELOG.md](CHANGELOG.md) for what's landed so far.
 
 ## Installation
 
@@ -60,6 +62,8 @@ On an Argon EON, the daemon also drives the OLED dashboard (screen rotation conf
 argonone-rs admin reset-password --username <name>
 ```
 
+Once logged in, the sidebar has **Fan control** (draggable CPU/HDD curve editor — edits apply live, no restart), **Storage & RAID** (per-disk usage/temperature, array health), and **System** (Celsius/Fahrenheit toggle, firmware/service info). Fan curve and unit edits are operator/admin only — viewers can look, not touch hardware settings. The server always enforces at least 25% fan at or above 75°C regardless of what a curve requests.
+
 ### Troubleshooting
 
 - **`sudo systemctl start argonone-rs` hangs, `systemctl list-jobs` shows it queued behind `plymouth-quit-wait.service` ("running" forever).** A headless-boot Plymouth quirk unrelated to this daemon — it can stall `multi-user.target`, which the unit is ordered after. Unstick it with `sudo systemctl stop plymouth-quit-wait.service`; the queued jobs (including `argonone-rs`) then proceed immediately.
@@ -73,7 +77,7 @@ argonone-rs admin reset-password --username <name>
 
 ### Planned / research
 
-The web UI's *foundation* (setup, login, session/RBAC, a bare dashboard shell) is implemented as of v0.3.0 — see Usage above. Everything else described below is still ahead (feature screens start at v0.4.0):
+The web UI's foundation (setup, login, session/RBAC) and its core dashboard (fan control, storage/RAID, system) are implemented as of v0.3.0/v0.4.0 — see Usage above. Still ahead: RTC/power scheduling and OLED config screens (v0.5.0), Users admin page (v0.5.0), and HTTPS (v0.6.0):
 
 - [docs/research-rust-backend-webui.md](docs/research-rust-backend-webui.md) — what the existing Argon40 Python stack does, proposed Rust daemon architecture, and web UI/UX research (target: homelab/NAS self-hosters).
 - [docs/research-auth-persistence-service.md](docs/research-auth-persistence-service.md) — forced first-run admin setup, multi-user RBAC, SQLite persistence, and systemd service install for Ubuntu 26.04 on Raspberry Pi.

@@ -25,6 +25,16 @@ impl crate::fan::TempSource for SystemCpuTemp {
     }
 }
 
+/// The HDD curve's demand as a floor on the CPU curve's own target — "if
+/// the HDD curve requests a higher speed than the CPU curve, the higher
+/// value wins" (`04-fan-curve-editor.html`). No disk temp reading
+/// available (no disks, or `smartctl` unavailable) contributes a 0%
+/// floor — i.e. no additional demand, the CPU curve's own target still
+/// applies via `tick_with_floor`'s `max`.
+fn hdd_floor(hdd_curve: &FanCurve, disk_temp_c: Option<f32>) -> u8 {
+    disk_temp_c.map(|t| hdd_curve.speed_for(t)).unwrap_or(0)
+}
+
 /// `/var/lib/argonone-rs/argonone.db` under systemd's `StateDirectory=`
 /// (A§3.2) by default; overridable for local dev/testing where that path
 /// isn't creatable (or shouldn't be shared with a real install).
@@ -53,21 +63,38 @@ pub async fn run() {
         }
     };
 
-    let curve = match FanCurve::load_or_default(Path::new(ConfigPaths::CPU_CURVE)) {
-        Ok(curve) => curve,
-        Err(e) => {
-            tracing::error!(error = %e, "failed to parse fan curve config, using default");
+    // Fan curves and units are DB-backed as of v0.4.0 (A§3.4: "the
+    // text-config-file source of truth is gone by design" once the
+    // covering table exists) — the legacy config files stay readable
+    // only for a one-time import, deferred to v0.7.0.
+    let cpu_curve = crate::fan::curve_store::load(&pool, "cpu")
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "failed to load CPU fan curve from DB, using default");
             FanCurve::default_curve()
-        }
-    };
+        });
+    let hdd_curve = crate::fan::curve_store::load(&pool, "hdd")
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "failed to load HDD fan curve from DB, using default");
+            FanCurve::default_curve()
+        });
+    let unit = crate::db::settings::load_units(&pool).await;
     let oled_cfg = OledConfig::load_or_default(Path::new(ConfigPaths::OLED));
-    let unit = TempUnit::load_or_default(Path::new(ConfigPaths::UNITS));
     let rtc_schedule = RtcSchedule::load_or_default(Path::new(ConfigPaths::RTC_SCHEDULE));
 
     apply_rtc_wake_alarm(hw.rtc.as_mut(), rtc_schedule);
     let mut rtc_last_sleep_trigger: Option<(u16, u8, u8, u8, u8)> = None;
 
     let (fan_speed_tx, fan_speed_rx) = tokio::sync::watch::channel(0u8);
+    // W§2.7: the REST write handlers push edited curves on these
+    // channels after their DB write commits; the control loop below
+    // wakes on either its poll-interval timer or a channel update,
+    // applying the new curve without restarting (and so without losing
+    // the hysteresis state a curve edit shouldn't reset).
+    let (cpu_curve_tx, mut cpu_curve_rx) = tokio::sync::watch::channel(cpu_curve.clone());
+    let (hdd_curve_tx, mut hdd_curve_rx) = tokio::sync::watch::channel(hdd_curve.clone());
+    let (units_tx, mut units_rx) = tokio::sync::watch::channel(unit);
     let bind_addr = bind_addr();
     let listener = match tokio::net::TcpListener::bind(&bind_addr).await {
         Ok(l) => l,
@@ -76,7 +103,15 @@ pub async fn run() {
             std::process::exit(1);
         }
     };
-    let router = crate::web::build_router(pool, hw.board, fan_speed_rx).await;
+    let router = crate::web::build_router(
+        pool,
+        hw.board,
+        fan_speed_rx,
+        cpu_curve_tx,
+        hdd_curve_tx,
+        units_tx,
+    )
+    .await;
     tracing::info!(addr = %bind_addr, "web server listening");
     tokio::spawn(async move {
         if let Err(e) = axum::serve(listener, router).await {
@@ -85,8 +120,11 @@ pub async fn run() {
     });
 
     let mut button_rx = hw.button.spawn();
-    let mut fan_controller = FanController::new(curve, SystemCpuTemp);
+    let mut fan_controller = FanController::new(cpu_curve, SystemCpuTemp);
+    let mut hdd_curve = hdd_curve;
+    let mut last_disk_temp_c: Option<f32> = None;
     let mut oled_cpu_usage = sysinfo::CpuUsage::new();
+    let mut oled_unit = unit;
     let mut rotation = Rotation::new(
         Screen::parse_list(&oled_cfg.screenlist),
         Duration::from_secs(oled_cfg.switch_duration_secs.max(1) as u64),
@@ -104,7 +142,13 @@ pub async fn run() {
     loop {
         tokio::select! {
             _ = poll.tick() => {
-                let speed = fan_controller.tick(hw.fan.as_ref(), Instant::now());
+                let snapshot = sysinfo::read_storage_snapshot().await;
+                last_disk_temp_c = snapshot
+                    .iter()
+                    .filter_map(|d| d.temp_c)
+                    .fold(None, |acc: Option<f32>, t| Some(acc.map_or(t, |a| a.max(t))));
+                let floor = hdd_floor(&hdd_curve, last_disk_temp_c);
+                let speed = fan_controller.tick_with_floor(hw.fan.as_ref(), Instant::now(), floor);
                 fan_speed_tx.send_replace(speed);
                 if let Some(sleep_at) = rtc_schedule.sleep {
                     check_rtc_sleep_schedule(
@@ -115,6 +159,21 @@ pub async fn run() {
                     );
                 }
             }
+            Ok(()) = cpu_curve_rx.changed() => {
+                fan_controller.set_curve(cpu_curve_rx.borrow_and_update().clone());
+                let floor = hdd_floor(&hdd_curve, last_disk_temp_c);
+                let speed = fan_controller.tick_with_floor(hw.fan.as_ref(), Instant::now(), floor);
+                fan_speed_tx.send_replace(speed);
+            }
+            Ok(()) = hdd_curve_rx.changed() => {
+                hdd_curve = hdd_curve_rx.borrow_and_update().clone();
+                let floor = hdd_floor(&hdd_curve, last_disk_temp_c);
+                let speed = fan_controller.tick_with_floor(hw.fan.as_ref(), Instant::now(), floor);
+                fan_speed_tx.send_replace(speed);
+            }
+            Ok(()) = units_rx.changed() => {
+                oled_unit = *units_rx.borrow();
+            }
             _ = oled_tick.tick() => {
                 if oled_cfg.enabled {
                     render_oled_tick(
@@ -122,7 +181,7 @@ pub async fn run() {
                         &mut rotation,
                         &mut oled_shown_screen,
                         &mut oled_cpu_usage,
-                        unit,
+                        oled_unit,
                     );
                 }
             }
@@ -304,8 +363,13 @@ pub fn fanoff_once() {
 }
 
 /// One-shot `status` command (`argonstatus.py` pretty-printer parity):
-/// CPU%, RAM, CPU temp, disk usage, RAID status, local IP.
-pub fn print_status() {
+/// CPU%, RAM, CPU temp, disk usage, RAID status, local IP. Fan curves and
+/// units are read from the database (the daemon's actual live source of
+/// truth as of v0.4.0), not the legacy config files, so this reflects
+/// what the running service is actually applying — falls back to the
+/// config-file defaults if the database can't be opened (e.g. run
+/// without ever having started the service) rather than failing outright.
+pub async fn print_status() {
     let mut hw = hardware::detect();
     println!("board:      {:?}", hw.board);
     println!("fan:        {:?}", hw.fan.capability());
@@ -340,7 +404,11 @@ pub fn print_status() {
         None => println!("cpu:        unavailable"),
     }
 
-    let unit = crate::config::TempUnit::load_or_default(Path::new(ConfigPaths::UNITS));
+    let pool = crate::db::connect(&db_path()).await.ok();
+    let unit = match &pool {
+        Some(pool) => crate::db::settings::load_units(pool).await,
+        None => crate::config::TempUnit::load_or_default(Path::new(ConfigPaths::UNITS)),
+    };
     match sysinfo::read_cpu_temp_c() {
         Some(t) => {
             let (value, suffix) = match unit {
@@ -381,9 +449,30 @@ pub fn print_status() {
         None => println!("ip:         unavailable"),
     }
 
-    match FanCurve::load_or_default(Path::new(ConfigPaths::HDD_CURVE)) {
-        Ok(curve) => println!("hdd curve:  {} point(s) configured", curve.0.len()),
-        Err(e) => println!("hdd curve:  {e}"),
+    match &pool {
+        Some(pool) => {
+            let cpu = crate::fan::curve_store::load(pool, "cpu")
+                .await
+                .unwrap_or_else(|_| FanCurve::default_curve());
+            let hdd = crate::fan::curve_store::load(pool, "hdd")
+                .await
+                .unwrap_or_else(|_| FanCurve::default_curve());
+            println!("cpu curve:  {} point(s) configured", cpu.0.len());
+            println!("hdd curve:  {} point(s) configured", hdd.0.len());
+        }
+        None => {
+            // Database unreachable (e.g. the service has never started) —
+            // fall back to what the legacy config files say, same as
+            // pre-v0.4.0 behavior.
+            match FanCurve::load_or_default(Path::new(ConfigPaths::CPU_CURVE)) {
+                Ok(curve) => println!("cpu curve:  {} point(s) configured", curve.0.len()),
+                Err(e) => println!("cpu curve:  {e}"),
+            }
+            match FanCurve::load_or_default(Path::new(ConfigPaths::HDD_CURVE)) {
+                Ok(curve) => println!("hdd curve:  {} point(s) configured", curve.0.len()),
+                Err(e) => println!("hdd curve:  {e}"),
+            }
+        }
     }
 }
 

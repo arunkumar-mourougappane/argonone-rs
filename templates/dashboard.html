@@ -1,42 +1,7 @@
-{% extends "base.html" %}
+{% extends "app_shell.html" %}
 {% block title %}Dashboard — argonone{% endblock %}
-{% block body %}
-<div class="shell">
-  <aside class="sidebar">
-    <div class="brand">
-      <div class="brand-mark">A</div>
-      <div class="brand-name">argonone</div>
-    </div>
-    <nav>
-      <a href="/">Dashboard</a>
-    </nav>
-    <form method="post" action="/logout">
-      <button type="submit" class="btn">Log out</button>
-    </form>
-  </aside>
-  <main>
-    <div id="status-strip" class="status-strip" hx-ext="ws" ws-connect="/api/ws">
-      <span><span class="stat-label">CPU</span><span id="stat-cpu-pct">--</span></span>
-      <span><span class="stat-label">CPU temp</span><span id="stat-cpu-temp">--</span></span>
-      <span><span class="stat-label">RAM</span><span id="stat-ram-pct">--</span></span>
-      <span><span class="stat-label">Fan</span><span id="stat-fan-pct">--</span></span>
-    </div>
-    <h1>Welcome, {{ username }}</h1>
-    <p><span class="role-badge">{{ role }}</span></p>
-    <p class="lede">This is the bare authenticated shell — v0.3.0 proves the auth/session/WebSocket pipe works end to end. Fan control, storage, and system pages land in v0.4.0.</p>
-  </main>
-</div>
-<script>
-document.body.addEventListener('htmx:wsAfterMessage', function (evt) {
-  var data;
-  try { data = JSON.parse(evt.detail.message); } catch (e) { return; }
-  if (data.type === 'stats') {
-    document.getElementById('stat-cpu-pct').textContent = data.cpu_pct != null ? data.cpu_pct.toFixed(0) + '%' : 'n/a';
-    document.getElementById('stat-cpu-temp').textContent = data.cpu_temp_c != null ? data.cpu_temp_c.toFixed(1) + '°C' : 'n/a';
-    document.getElementById('stat-ram-pct').textContent = data.ram_used_pct != null ? data.ram_used_pct.toFixed(0) + '%' : 'n/a';
-  } else if (data.type === 'fan_state') {
-    document.getElementById('stat-fan-pct').textContent = data.current_pct + '%';
-  }
-});
-</script>
+{% block main %}
+<h1>Welcome, {{ username }}</h1>
+<p><span class="role-badge">{{ role }}</span></p>
+<p class="lede">Fan control, storage, and system settings are in the sidebar. The dashboard itself stays a light landing page for now — deeper live widgets land in v0.5.0.</p>
 {% endblock %}

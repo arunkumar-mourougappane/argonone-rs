@@ -3,9 +3,12 @@
 //! `docs/ROADMAP.md`'s v0.3.0 entry. No feature screens yet.
 
 mod dashboard;
+mod fan_curve;
 mod login;
 mod setup;
 mod status;
+mod storage;
+mod system;
 pub mod templates;
 #[cfg(test)]
 mod tests;
@@ -13,13 +16,14 @@ mod users;
 mod ws;
 
 use crate::auth::Backend;
+use crate::config::{FanCurve, TempUnit};
 use crate::db::DbPool;
 use axum::Router;
 use axum::extract::{Request, State};
 use axum::http::header;
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Redirect, Response};
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use axum_login::AuthManagerLayerBuilder;
 use axum_login::tower_sessions::cookie::SameSite;
 use axum_login::tower_sessions::{Expiry, SessionManagerLayer};
@@ -42,12 +46,22 @@ pub struct AppState {
     pub setup_complete: Arc<AtomicBool>,
     pub board: crate::hardware::board::Board,
     pub fan_speed: FanSpeedRx,
+    /// W§2.7's live-apply channels: PUT handlers send here after their DB
+    /// write commits, the control loop (`service::run`) wakes on the
+    /// change and applies it without restarting.
+    pub cpu_curve_tx: tokio::sync::watch::Sender<FanCurve>,
+    pub hdd_curve_tx: tokio::sync::watch::Sender<FanCurve>,
+    pub units_tx: tokio::sync::watch::Sender<TempUnit>,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn build_router(
     pool: DbPool,
     board: crate::hardware::board::Board,
     fan_speed: FanSpeedRx,
+    cpu_curve_tx: tokio::sync::watch::Sender<FanCurve>,
+    hdd_curve_tx: tokio::sync::watch::Sender<FanCurve>,
+    units_tx: tokio::sync::watch::Sender<TempUnit>,
 ) -> Router {
     let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
         .fetch_one(&pool)
@@ -60,6 +74,9 @@ pub async fn build_router(
         setup_complete: Arc::new(AtomicBool::new(user_count > 0)),
         board,
         fan_speed,
+        cpu_curve_tx,
+        hdd_curve_tx,
+        units_tx,
     };
 
     let session_store = SqliteStore::new(pool);
@@ -90,6 +107,14 @@ pub async fn build_router(
             "/api/users/{id}/reset-password",
             post(users::reset_password),
         )
+        .route("/fan", get(fan_curve::page))
+        .route(
+            "/api/fan/curve/{curve}",
+            get(fan_curve::get_curve).put(fan_curve::put_curve),
+        )
+        .route("/storage", get(storage::page))
+        .route("/system", get(system::page))
+        .route("/api/settings/units", put(system::put_units))
         .route_layer(middleware::from_fn(login::require_login));
 
     let public = Router::new()

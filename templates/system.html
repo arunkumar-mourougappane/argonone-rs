@@ -1,0 +1,68 @@
+{% extends "app_shell.html" %}
+{% block title %}System — argonone{% endblock %}
+{% block main %}
+<style>
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px 22px;margin-bottom:18px;max-width:620px;}
+.card-title{font-weight:600;font-size:14px;margin-bottom:4px;}
+.card-sub{color:var(--muted);font-size:12.5px;margin:0 0 14px;}
+.seg{position:relative;display:inline-flex;background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:3px;}
+.seg button{position:relative;z-index:1;border:none;background:none;font-family:var(--font-ui);font-size:12.5px;font-weight:600;padding:7px 18px;border-radius:7px;color:var(--muted);cursor:pointer;}
+.seg button.active{color:var(--accent);}
+table.kv{width:100%;border-collapse:collapse;font-size:13px;}
+table.kv td{padding:8px 0;border-bottom:1px solid var(--border);}
+table.kv td:first-child{color:var(--muted);}
+table.kv td:last-child{text-align:right;font-family:var(--font-mono);}
+.err{color:var(--crit);font-size:12.5px;margin-top:10px;}
+</style>
+<div class="page-head">
+  <h1>System</h1>
+  <p class="lede">Units and firmware/service info. Power schedule, IR remote, and HTTPS land in later milestones.</p>
+</div>
+
+<div class="card">
+  <div class="card-title">Units</div>
+  <p class="card-sub">Applies to every temperature reading across the dashboard and OLED panel.</p>
+  {% if can_edit %}
+  <div class="seg" id="unitsSeg">
+    <button class="{% if unit == 'C' %}active{% endif %}" data-unit="C">Celsius</button>
+    <button class="{% if unit == 'F' %}active{% endif %}" data-unit="F">Fahrenheit</button>
+  </div>
+  <div class="err" id="errMsg"></div>
+  {% else %}
+  <p>{{ "Celsius" if unit == "C" else "Fahrenheit" }} (viewer role — ask an operator or admin to change this)</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="card-title">Firmware &amp; service</div>
+  <table class="kv">
+    <tr><td>argonone-rs</td><td>{{ version }}</td></tr>
+    <tr><td>Board</td><td>{{ board }}</td></tr>
+    <tr><td>OS</td><td>{{ os }}</td></tr>
+    <tr><td>Service</td><td>running</td></tr>
+  </table>
+</div>
+{% endblock %}
+{% block page_script %}
+{% if can_edit %}
+<script>
+const errMsg = document.getElementById('errMsg');
+document.querySelectorAll('#unitsSeg button').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    errMsg.textContent = '';
+    const resp = await fetch('/api/settings/units', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ unit: btn.dataset.unit }),
+    });
+    if (!resp.ok) {
+      errMsg.textContent = `save failed (${resp.status})`;
+      return;
+    }
+    document.querySelectorAll('#unitsSeg button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  });
+});
+</script>
+{% endif %}
+{% endblock %}

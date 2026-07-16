@@ -66,6 +66,29 @@ impl FanCurve {
             .unwrap_or(0)
     }
 
+    /// Server-enforced safety floor (W§2.8): rejects a curve that would
+    /// give less than [`MIN_SAFE_PCT`] fan speed at or above
+    /// [`SAFETY_CEILING_C`], independent of what points an operator
+    /// configured — a client-side-only check can't stop an API caller
+    /// from bypassing it. Checks every configured breakpoint at or above
+    /// the ceiling plus the ceiling itself: `speed_for` is a step
+    /// function that only changes value at breakpoints, so that set
+    /// fully characterizes its behavior across `[SAFETY_CEILING_C, ∞)`.
+    pub fn violates_safety_floor(&self) -> bool {
+        const SAFETY_CEILING_C: f32 = 75.0;
+        const MIN_SAFE_PCT: u8 = 25;
+        let mut checkpoints: Vec<f32> = self
+            .0
+            .iter()
+            .map(|p| p.temp_c as f32)
+            .filter(|&t| t >= SAFETY_CEILING_C)
+            .collect();
+        checkpoints.push(SAFETY_CEILING_C);
+        checkpoints
+            .iter()
+            .any(|&t| self.speed_for(t) < MIN_SAFE_PCT)
+    }
+
     pub fn parse(contents: &str) -> Result<Self, String> {
         let mut points = Vec::new();
         for (lineno, line) in contents.lines().enumerate() {
@@ -322,6 +345,54 @@ mod tests {
         assert_eq!(curve.speed_for(62.0), 55);
         assert_eq!(curve.speed_for(56.0), 30);
         assert_eq!(curve.speed_for(40.0), 0);
+    }
+
+    #[test]
+    fn default_curve_does_not_violate_safety_floor() {
+        assert!(!FanCurve::default_curve().violates_safety_floor());
+    }
+
+    #[test]
+    fn empty_curve_violates_safety_floor() {
+        // No points at all -> speed_for always returns 0, well under the
+        // 25% floor at the 75C checkpoint.
+        assert!(FanCurve(vec![]).violates_safety_floor());
+    }
+
+    #[test]
+    fn zero_percent_at_high_temp_violates_safety_floor() {
+        let curve = FanCurve(vec![CurvePoint {
+            temp_c: 90,
+            speed_pct: 0,
+        }]);
+        assert!(curve.violates_safety_floor());
+    }
+
+    #[test]
+    fn gap_between_safe_points_above_ceiling_is_caught() {
+        // 75C has only 10% (unsafe); the higher 95C point can't paper
+        // over the unsafe gap in between, since real temps sit at 75-94C
+        // too before ever reaching 95C.
+        let curve = FanCurve(vec![
+            CurvePoint {
+                temp_c: 95,
+                speed_pct: 100,
+            },
+            CurvePoint {
+                temp_c: 75,
+                speed_pct: 10,
+            },
+        ]);
+        assert!(curve.violates_safety_floor());
+    }
+
+    #[test]
+    fn adequate_speed_at_and_above_ceiling_passes() {
+        let curve = FanCurve(vec![CurvePoint {
+            temp_c: 75,
+            speed_pct: 25,
+        }]);
+        assert!(!curve.violates_safety_floor());
     }
 
     #[test]

@@ -145,15 +145,40 @@ fn parse_disk_usage(text: &str) -> Vec<DiskUsage> {
         .collect()
 }
 
-#[derive(Debug, Clone)]
-pub struct RaidArray {
+#[derive(Debug, Clone, PartialEq)]
+pub struct RaidDevice {
     pub name: String,
-    pub state: String,
+    pub spare: bool,
 }
 
-/// Parses `/proc/mdstat` for a coarse "array name + active/degraded"
-/// summary. Full detail (`mdadm -D`) is left for when the storage/RAID
-/// web page (v0.4.0) actually needs more than this.
+/// A `/proc/mdstat` array entry, parsed from its two-line record — the
+/// array-summary line (name, level, member devices) and the immediately
+/// following blocks/status line (size, `[raid_disks/working_disks]`,
+/// per-device up/down bitmap). Full `mdadm -D` detail (event counts,
+/// resync progress) isn't parsed — this is what the storage/RAID web
+/// page (v0.4.0, W§3.3) actually needs, not everything `mdadm` reports.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RaidArray {
+    pub name: String,
+    pub level: String,
+    pub state: String,
+    pub devices: Vec<RaidDevice>,
+    pub raid_disks: u8,
+    pub working_disks: u8,
+    pub size_kb: Option<u64>,
+}
+
+impl RaidArray {
+    pub fn failed_disks(&self) -> u8 {
+        self.raid_disks.saturating_sub(self.working_disks)
+    }
+
+    pub fn spare_disks(&self) -> usize {
+        self.devices.iter().filter(|d| d.spare).count()
+    }
+}
+
+/// Parses `/proc/mdstat` for per-array RAID status.
 pub fn read_raid_status() -> Vec<RaidArray> {
     let Ok(contents) = fs::read_to_string("/proc/mdstat") else {
         return Vec::new();
@@ -162,26 +187,163 @@ pub fn read_raid_status() -> Vec<RaidArray> {
 }
 
 fn parse_raid_status(contents: &str) -> Vec<RaidArray> {
-    contents
-        .lines()
-        .filter(|l| l.starts_with("md"))
-        .filter_map(|line| {
-            let name = line.split_whitespace().next()?.to_string();
-            let state = if line.contains("inactive") {
-                "inactive"
-            } else if contents.contains("_") {
-                // crude degraded-array signal: mdstat prints '_' in the
-                // bitmap for a missing/failed member.
-                "degraded"
-            } else {
-                "active"
-            };
-            Some(RaidArray {
+    let mut arrays = Vec::new();
+    let mut lines = contents.lines().peekable();
+    while let Some(line) = lines.next() {
+        if !line.starts_with("md") {
+            continue;
+        }
+        let mut fields = line.split_whitespace();
+        let Some(name) = fields.next() else { continue };
+        let Some(_colon) = fields.next() else {
+            continue;
+        };
+        let Some(activity) = fields.next() else {
+            continue;
+        };
+        let level = fields.next().unwrap_or("").to_string();
+        let devices: Vec<RaidDevice> = fields
+            .map(|tok| RaidDevice {
+                name: tok.split('[').next().unwrap_or(tok).to_string(),
+                spare: tok.contains("(S)"),
+            })
+            .collect();
+
+        let mut size_kb = None;
+        let mut raid_disks = 0u8;
+        let mut working_disks = 0u8;
+        if let Some(detail_line) = lines.peek() {
+            size_kb = detail_line
+                .split_whitespace()
+                .next()
+                .and_then(|s| s.parse().ok());
+            if let Some(bracket) = detail_line.split('[').nth(1)
+                && let Some(counts) = bracket.split(']').next()
+                && let Some((total, working)) = counts.split_once('/')
+            {
+                raid_disks = total.parse().unwrap_or(0);
+                working_disks = working.parse().unwrap_or(0);
+            }
+        }
+
+        let state = if activity == "inactive" {
+            "inactive"
+        } else if raid_disks > 0 && working_disks < raid_disks {
+            "degraded"
+        } else {
+            "active"
+        };
+
+        arrays.push(RaidArray {
+            name: name.to_string(),
+            level,
+            state: state.to_string(),
+            devices,
+            raid_disks,
+            working_disks,
+            size_kb,
+        });
+    }
+    arrays
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BlockDevice {
+    pub name: String,
+    pub size_bytes: u64,
+    pub model: Option<String>,
+}
+
+/// Whole-disk devices (no partitions), via `lsblk -d` — the storage page
+/// (v0.4.0, W§3.3) lists per-disk rows, not per-filesystem-mount rows
+/// like [`read_disk_usage`].
+pub fn read_block_devices() -> Vec<BlockDevice> {
+    let Ok(output) = Command::new("lsblk")
+        .args(["-d", "-n", "-b", "-J", "-o", "NAME,SIZE,MODEL,TYPE"])
+        .output()
+    else {
+        return Vec::new();
+    };
+    parse_block_devices(&String::from_utf8_lossy(&output.stdout))
+}
+
+fn parse_block_devices(json: &str) -> Vec<BlockDevice> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
+        return Vec::new();
+    };
+    let Some(devices) = value.get("blockdevices").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    devices
+        .iter()
+        .filter(|d| d.get("type").and_then(|v| v.as_str()) == Some("disk"))
+        .filter_map(|d| {
+            let name = d.get("name")?.as_str()?.to_string();
+            let size_bytes = d.get("size")?.as_u64()?;
+            let model = d
+                .get("model")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+            Some(BlockDevice {
                 name,
-                state: state.to_string(),
+                size_bytes,
+                model,
             })
         })
         .collect()
+}
+
+/// Disk temperature in Celsius via `smartctl`'s JSON output, matching the
+/// documented approach (W§1.2) — no safe Rust crate reads S.M.A.R.T.
+/// registers directly for arbitrary drives, shelling out is the pragmatic
+/// choice here too. Returns `None` on any failure (missing `smartmontools`,
+/// unsupported drive, permission denied) rather than erroring — a status
+/// page showing "temp: —" is fine, a crashed daemon is not.
+pub fn read_disk_temp_c(device: &str) -> Option<f32> {
+    let output = Command::new("smartctl")
+        .args(["-A", "-j", &format!("/dev/{device}")])
+        .output()
+        .ok()?;
+    parse_smartctl_temp(&String::from_utf8_lossy(&output.stdout))
+}
+
+fn parse_smartctl_temp(json: &str) -> Option<f32> {
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    value
+        .get("temperature")
+        .and_then(|t| t.get("current"))
+        .and_then(|v| v.as_f64())
+        .map(|v| v as f32)
+}
+
+/// A block device paired with its S.M.A.R.T. temperature, for the
+/// storage page (v0.4.0) and the HDD fan curve's temperature input.
+#[derive(Debug, Clone)]
+pub struct DiskInfo {
+    pub device: BlockDevice,
+    pub temp_c: Option<f32>,
+}
+
+/// [`read_block_devices`] + a [`read_disk_temp_c`] call per device — runs
+/// on a blocking-pool thread via [`tokio::task::spawn_blocking`] since
+/// `lsblk`/`smartctl` are synchronous subprocess calls that would
+/// otherwise stall a tokio worker thread if called directly from async
+/// code (the fan control loop's poll tick, or a storage-page request
+/// handler).
+pub async fn read_storage_snapshot() -> Vec<DiskInfo> {
+    tokio::task::spawn_blocking(|| {
+        read_block_devices()
+            .into_iter()
+            .map(|device| {
+                let temp_c = read_disk_temp_c(&device.name);
+                DiskInfo { device, temp_c }
+            })
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
 }
 
 /// Board model string, for the OLED splash screen's version label (W§1.5's
@@ -285,6 +447,80 @@ mod tests {
         let mdstat = "md0 : inactive sda1[0]\n";
         let arrays = parse_raid_status(mdstat);
         assert_eq!(arrays[0].state, "inactive");
+    }
+
+    #[test]
+    fn parse_raid_status_extracts_devices_size_and_counts() {
+        let mdstat = "Personalities : [raid1]\nmd0 : active raid1 sda1[0] sdb1[1]\n      1000000 blocks super 1.2 [2/2] [UU]\n";
+        let arrays = parse_raid_status(mdstat);
+        assert_eq!(arrays[0].level, "raid1");
+        assert_eq!(arrays[0].raid_disks, 2);
+        assert_eq!(arrays[0].working_disks, 2);
+        assert_eq!(arrays[0].size_kb, Some(1000000));
+        assert_eq!(arrays[0].failed_disks(), 0);
+        assert_eq!(
+            arrays[0].devices,
+            vec![
+                RaidDevice {
+                    name: "sda1".to_string(),
+                    spare: false
+                },
+                RaidDevice {
+                    name: "sdb1".to_string(),
+                    spare: false
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_raid_status_detects_degraded_array_from_working_count() {
+        let mdstat = "md0 : active raid1 sda1[0]\n      1000000 blocks super 1.2 [2/1] [U_]\n";
+        let arrays = parse_raid_status(mdstat);
+        assert_eq!(arrays[0].state, "degraded");
+        assert_eq!(arrays[0].failed_disks(), 1);
+    }
+
+    #[test]
+    fn parse_raid_status_counts_spare_devices() {
+        let mdstat = "md0 : active raid1 sda1[0] sdb1[1] sdc1[2](S)\n      1000000 blocks super 1.2 [2/2] [UU]\n";
+        let arrays = parse_raid_status(mdstat);
+        assert_eq!(arrays[0].spare_disks(), 1);
+    }
+
+    #[test]
+    fn parse_block_devices_filters_to_whole_disks() {
+        let json = r#"{
+           "blockdevices": [
+              {"name":"sda", "size":4000787030016, "model":"IronWolf ", "type":"disk"},
+              {"name":"sda1", "size":4000785932288, "model":null, "type":"part"},
+              {"name":"mmcblk0", "size":63864569856, "model":null, "type":"disk"}
+           ]
+        }"#;
+        let devices = parse_block_devices(json);
+        assert_eq!(devices.len(), 2);
+        assert_eq!(devices[0].name, "sda");
+        assert_eq!(devices[0].size_bytes, 4000787030016);
+        assert_eq!(devices[0].model.as_deref(), Some("IronWolf"));
+        assert_eq!(devices[1].name, "mmcblk0");
+        assert_eq!(devices[1].model, None);
+    }
+
+    #[test]
+    fn parse_block_devices_handles_malformed_json() {
+        assert_eq!(parse_block_devices("not json"), vec![]);
+    }
+
+    #[test]
+    fn parse_smartctl_temp_reads_current_temperature() {
+        let json = r#"{"temperature": {"current": 34}}"#;
+        assert_eq!(parse_smartctl_temp(json), Some(34.0));
+    }
+
+    #[test]
+    fn parse_smartctl_temp_none_when_field_missing() {
+        assert_eq!(parse_smartctl_temp(r#"{"some_other_field": 1}"#), None);
+        assert_eq!(parse_smartctl_temp("not json"), None);
     }
 
     #[test]

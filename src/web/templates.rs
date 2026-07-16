@@ -8,6 +8,11 @@ pub fn build_env() -> Environment<'static> {
     let mut env = Environment::new();
     env.add_template("base.html", include_str!("../../templates/base.html"))
         .expect("base.html is valid minijinja syntax");
+    env.add_template(
+        "app_shell.html",
+        include_str!("../../templates/app_shell.html"),
+    )
+    .expect("app_shell.html is valid minijinja syntax");
     env.add_template("setup.html", include_str!("../../templates/setup.html"))
         .expect("setup.html is valid minijinja syntax");
     env.add_template("login.html", include_str!("../../templates/login.html"))
@@ -22,6 +27,15 @@ pub fn build_env() -> Environment<'static> {
         include_str!("../../templates/dashboard.html"),
     )
     .expect("dashboard.html is valid minijinja syntax");
+    env.add_template(
+        "fan_curve.html",
+        include_str!("../../templates/fan_curve.html"),
+    )
+    .expect("fan_curve.html is valid minijinja syntax");
+    env.add_template("storage.html", include_str!("../../templates/storage.html"))
+        .expect("storage.html is valid minijinja syntax");
+    env.add_template("system.html", include_str!("../../templates/system.html"))
+        .expect("system.html is valid minijinja syntax");
     env
 }
 

@@ -1,6 +1,7 @@
-//! Bare authenticated shell (W§3.2) — the v0.3.0 milestone deliberately
-//! stops here: no feature screens, just proof that auth/session routing
-//! and the live WebSocket both work end to end.
+//! Authenticated landing page — the app shell (sidebar/status-strip) is
+//! shared with the fan/storage/system pages via `app_shell.html`; this
+//! page itself stays a light landing spot (deeper live widgets are
+//! v0.5.0).
 
 use super::AppState;
 use super::templates::render;
@@ -21,6 +22,7 @@ pub async fn show(auth_session: AuthSession, State(state): State<AppState>) -> R
         context! {
             username => user.username,
             role => user.role().as_str(),
+            active_page => "dashboard",
         },
     );
     html.into_response()

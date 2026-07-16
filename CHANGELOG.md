@@ -6,6 +6,16 @@ This file is the permanent, cumulative log across every version. For the prose w
 
 ## [Unreleased]
 
+### Added
+
+- Core dashboard (v0.4.0, W§2.5/§2.7/§2.8, W§3.4): draggable-SVG fan curve editor (CPU/HDD tabs), Storage & RAID page, and a System page (units toggle + firmware/service info) — the web UI's first real feature screens, replacing `argonone-fanconfig.sh`/`argon-unitconfig.sh` and friends.
+- `PUT /api/fan/curve/{cpu,hdd}` and `GET/PUT /api/settings/units`, operator+ gated; edits apply to the running fan control loop live via `tokio::sync::watch` channels, without restarting the daemon or losing hysteresis state (W§2.7).
+- Server-enforced fan-curve safety floor (W§2.8): rejects any curve implying less than 25% fan at or above 75°C, checked at every configured breakpoint at/above the ceiling (not just one point), so an unsafe *gap* between two otherwise-safe points is caught too.
+- The HDD curve is now actually applied to fan control, not just editable — `max(cpu_curve_speed, hdd_curve_speed)` each poll, matching the documented "the higher value wins" behavior.
+- New sysinfo surface: per-disk S.M.A.R.T. temperature (`smartctl`), whole-disk enumeration (`lsblk`), and richer `/proc/mdstat` RAID parsing (level, size, working/failed/spare disk counts, member device list) — previously only a coarse name+state summary.
+- Fan curves and the temperature-unit setting are now DB-backed (`fan_curve_points`/`settings` tables), replacing the config-file source of truth per the plan already recorded when those files were first read (v0.1.0) — `argonone-rs status` reads the same values the running daemon applies, so the two can't drift.
+- Shared authenticated app-shell template (sidebar navigation, status strip) factored out of the v0.3.0 dashboard shell and reused across all four authenticated pages.
+
 ## [v0.3.0] - 2026-07-15
 
 Web foundation: persistence, auth, live shell — the first version with a web server, scoped to infrastructure rather than feature screens. Still no HTTPS, fan curve editing, or settings screens. See [docs/ROADMAP.md](docs/ROADMAP.md) for what's next.
