@@ -11,11 +11,9 @@ A Rust daemon, CLI, and web UI for Argon ONE/EON Raspberry Pi cases — I2C fan 
 
 ## Status
 
-[v0.2.0](docs/ROADMAP.md#v020--eon-extras-oled--rtc) (EON extras: OLED dashboard + RTC wake/sleep scheduling) and [v0.1.0](docs/ROADMAP.md#v010--core-hardware-daemon-argon-one-parity) (core hardware daemon: I2C fan control, GPIO power-button monitoring, sysinfo collection, board auto-detection) are released and verified on real Argon ONE/EON hardware. Every hardware access goes through a `HardwareBackend` trait with a no-op fallback, so the daemon runs (and is testable) without the case attached.
+Latest tagged release: **v0.3.0** (web foundation — persistence, auth, live shell), verified on real Argon ONE/EON hardware. **v0.4.0** (fan curve editor, Storage & RAID, System pages) is implemented and route-tested on `main` but not yet tagged — it still needs a verification pass against real disks/RAID hardware. Every hardware access goes through a `HardwareBackend` trait with a no-op fallback, so the daemon runs (and is testable) without the case attached.
 
-[v0.3.0](docs/ROADMAP.md#v030--web-foundation-persistence-auth-live-shell) — the web foundation (SQLite persistence, forced first-run admin setup, Argon2id auth with three-role RBAC, a bare authenticated `htmx`/`minijinja` shell, and a live WebSocket status strip) — is released and verified on real Argon ONE hardware.
-
-[v0.4.0](docs/ROADMAP.md#v040--core-dashboard-fan-control-storage-system) — the core dashboard (fan curve editor, Storage & RAID page, System page) — is implemented, route-tested, and manually verified end to end, but **not yet verified against real disks/RAID hardware**, so it isn't tagged/released yet. See [docs/ROADMAP.md](docs/ROADMAP.md) for the full v0.1.0 → v0.7.0 plan and [CHANGELOG.md](CHANGELOG.md) for what's landed so far.
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the full v0.1.0 → v0.7.0 milestone plan (each item annotated `Done`/`Not yet done` against the code) and [CHANGELOG.md](CHANGELOG.md) for the dated, cumulative record of what's landed.
 
 ## Installation
 
