@@ -48,9 +48,9 @@ impl std::str::FromStr for Role {
 
 /// The subset of a `users` row (A§2.3's schema sketch) auth actually
 /// needs. `first_name`/`last_name`/`created_at`/`last_login_at` are
-/// display-only fields for the future Users admin page (v0.5.0), not
-/// used here — a dedicated DTO can select those when that page exists,
-/// rather than this struct carrying fields nothing reads yet.
+/// display-only fields the Users admin page (v0.5.0, `src/db/users.rs
+/// ::UserRow`) selects instead — this struct stays minimal since the
+/// auth hot path never reads them.
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct User {
     pub id: i64,

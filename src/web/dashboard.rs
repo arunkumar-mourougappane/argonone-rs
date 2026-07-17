@@ -1,7 +1,8 @@
 //! Authenticated landing page — the app shell (sidebar/status-strip) is
 //! shared with the fan/storage/system pages via `app_shell.html`; this
-//! page itself stays a light landing spot (deeper live widgets are
-//! v0.5.0).
+//! page itself stays a light landing spot (deeper live widgets — network
+//! throughput, load average, swap — are v0.6.0's "dashboard data-surface
+//! gaps", per docs/ROADMAP.md).
 
 use super::AppState;
 use super::templates::render;

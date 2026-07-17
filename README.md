@@ -11,7 +11,7 @@ A Rust daemon, CLI, and web UI for Argon ONE/EON Raspberry Pi cases — I2C fan 
 
 ## Status
 
-Latest tagged release: **v0.3.0** (web foundation — persistence, auth, live shell), verified on real Argon ONE/EON hardware. **v0.4.0** (fan curve editor, Storage & RAID, System pages) is implemented, route-tested, and verified end-to-end on real hardware — including against actual disks and a RAID array — but not yet tagged. Every hardware access goes through a `HardwareBackend` trait with a no-op fallback, so the daemon runs (and is testable) without the case attached.
+Latest tagged release: **v0.4.0** (fan curve editor, Storage & RAID, System pages), verified on real hardware including actual disks and a RAID array. **v0.5.0** (Users admin, Power & RTC schedule, OLED config + live preview) is implemented and route-tested but not yet verified on real EON hardware or tagged. Every hardware access goes through a `HardwareBackend` trait with a no-op fallback, so the daemon runs (and is testable) without the case attached.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full v0.1.0 → v0.7.0 milestone plan (each item annotated `Done`/`Not yet done` against the code) and [CHANGELOG.md](CHANGELOG.md) for the dated, cumulative record of what's landed.
 
@@ -99,11 +99,11 @@ Once logged in, the sidebar has **Fan control** (draggable CPU/HDD curve editor 
 
 ### Planned / research
 
-The web UI's foundation (setup, login, session/RBAC) and its core dashboard (fan control, storage/RAID, system) are implemented as of v0.3.0/v0.4.0 — see Usage above. Still ahead: RTC/power scheduling and OLED config screens (v0.5.0), Users admin page (v0.5.0), and HTTPS (v0.6.0):
+The web UI now covers every mockup screen — setup/login/session/RBAC, fan control, storage/RAID, system, Power & RTC scheduling, OLED config, and Users admin — as of v0.3.0 through v0.5.0 (see Usage above). Still ahead: HTTPS and the remaining dashboard data-surface gaps — network throughput, load average, swap (v0.6.0):
 
 - [docs/research-rust-backend-webui.md](docs/research-rust-backend-webui.md) — what the existing Argon40 Python stack does, proposed Rust daemon architecture, and web UI/UX research (target: homelab/NAS self-hosters).
 - [docs/research-auth-persistence-service.md](docs/research-auth-persistence-service.md) — forced first-run admin setup, multi-user RBAC, SQLite persistence, and systemd service install for Ubuntu 26.04 on Raspberry Pi.
-- [docs/mockups/](docs/mockups/00-index.html) — interactive HTML mockups of the full web UI (setup, login, dashboard, fan curve editor, storage/RAID, OLED display, users, system settings) — the target design; setup, login, dashboard, fan curve editor, Storage & RAID, and the units/firmware slice of System are real, OLED display/Power & RTC/Users are still mockup-only. Open `00-index.html` in a browser to start.
+- [docs/mockups/](docs/mockups/00-index.html) — interactive HTML mockups of the full web UI (setup, login, dashboard, fan curve editor, storage/RAID, OLED display, users, system settings) — the target design; every screen is now real except the dashboard's deeper live widgets (v0.6.0). Open `00-index.html` in a browser to start.
 
 ## License
 
