@@ -214,12 +214,38 @@ Completes web-UI parity with every mockup screen.
 - OLED config page: screen rotation drag-to-reorder, timing, **live
   preview rendered server-side from the actual framebuffer** (W§3.2 item
   4 — the "what's on the panel right now" feature flagged as
-  genuinely hard to get today)
-- RTC/Power schedule page
+  genuinely hard to get today). Done — `templates/oled.html`,
+  `src/web/oled.rs`, `src/oled/framebuffer.rs` (an in-memory
+  `DrawTarget` so the same `draw_screen` function the physical panel
+  uses renders into memory instead — no framebuffer-readback API or new
+  dependency needed). `/api/ws`'s `oled_screen` message drives the
+  preview's refresh, matching the API contract exactly.
+- RTC/Power schedule page. Done — as a card on `/system`
+  (`templates/system.html`), not a standalone route, matching
+  `08-system-settings.html#power`'s actual structure. Went further than
+  a simple wake/sleep pair: a full multi-entry, day-of-week schedule
+  table (`src/rtc_schedule.rs`), since the PCF8563's one alarm slot can
+  only ever hold a single next occurrence — resolving *which* one is
+  the real content of this feature, not just the web form around it.
 - Users admin page: full CRUD, role assignment, the "Reset password"
-  action wired to the mechanism built in v0.3.0 (`07-users-rbac.html`)
+  action wired to the mechanism built in v0.3.0 (`07-users-rbac.html`).
+  Done — `templates/users.html`, `src/web/users.rs`, `src/db/users.rs`.
+  Guards the last-admin case (can't delete or demote the sole
+  remaining admin) since nothing else in this milestone would recover
+  from that.
 - `audit_log` actually populated and worth having by this point — enough
-  privileged multi-user actions exist to make it meaningful (A§2.3)
+  privileged multi-user actions exist to make it meaningful (A§2.3).
+  Done — every user-management action plus the previously-unlogged
+  `settings.update_units` now write an entry.
+- **Not yet done**: verified on real EON hardware — this dev pass ran
+  without a case attached (`Board::NoCase`), so the RTC/OLED 404-on-
+  non-EON paths and the general web-layer plumbing are what's actually
+  been exercised locally (confirmed the OLED render loop and
+  `oled_screen` WS message do tick correctly even against the no-op
+  backend). The *happy* paths — real wake-alarm behavior, a real
+  drag-reordered screen rotation on the physical panel — need the same
+  hardware pass every prior release got before this milestone is
+  considered complete.
 
 ---
 

@@ -6,6 +6,18 @@ This file is the permanent, cumulative log across every version. For the prose w
 
 ## [Unreleased]
 
+### Added
+
+- Users admin page (v0.5.0, mirrors `07-users-rbac.html`): full CRUD — `GET/POST /api/users`, `DELETE /api/users/{id}`, `PUT /api/users/{id}/role`, all admin-only — plus the `/users` page itself. Refuses to delete or demote the last remaining admin, and refuses self-delete, so user management can't lock itself out. New `src/db/users.rs` mirrors `db/settings.rs`'s query-style conventions; no migration needed, the `users` table already had `first_name`/`last_name`/`created_at`/`last_login_at` sitting unused by the auth-hot-path `User` struct.
+- Power & RTC schedule card on `/system` (v0.5.0, EON-only, mirrors `08-system-settings.html#power`): a full multi-entry, day-of-week wake/sleep schedule, replacing the old single-wake/single-sleep `/etc/argonrtc.conf` model. `GET/PUT /api/rtc/schedule`, `viewer+`/`operator+`, 404s on non-EON boards. `RtcBackend::set_wake_alarm` now takes an optional weekday — the PCF8563 has exactly one alarm slot (fires "every day" or one specific weekday, never an arbitrary multi-day set), so new `src/rtc_schedule.rs` resolves a full schedule down to the single next occurrence to arm: once at startup, on every schedule edit, and again before every self-triggered sleep (nothing's running to reprogram the alarm once the Pi is actually powered off). Sleep matching now checks day-of-week too, not just hour:minute.
+- OLED config page (v0.5.0, `/display`, EON-only, mirrors `06-oled-display.html`): drag-to-reorder screen rotation list, per-screen enable toggle, switch-duration/screensaver-timeout sliders, and a panel-enable switch, all auto-saving via `GET/PUT /api/oled/config`. The live preview is a real render, not a simulation — new `src/oled/framebuffer.rs` adds an in-memory `DrawTarget` so the same `draw_screen` function the physical panel uses renders into memory instead; `GET /api/oled/preview` returns the currently-selected screen's packed 1bpp pixels as a plain JSON byte array (no image-encoding dependency needed for a 1024-byte 128×64 frame). `service::render_oled_tick` publishes the selected screen on a watch channel whenever the *selection* changes; `/api/ws` forwards it as `{"type":"oled_screen","name":...}` per the documented contract, driving the preview's refresh without polling.
+- `OledConfig`/`RtcSchedule` are now DB-backed (`db/settings.rs::load_oled_config`/`save_oled_config`, `load_rtc_schedule`/`save_rtc_schedule`), mirroring fan curves/units — the config files stay the fallback default until something's actually been saved. Both push live-apply updates through `service::run`'s existing `tokio::sync::watch` pattern.
+- Sidebar nav visibility (Display link, Power & RTC card) now depends on `board == Eon`, threaded through every authenticated page's template context.
+
+### Fixed
+
+- `audit_log` gap: `settings.update_units` never wrote an audit entry despite `fan_curve.update`/`user.reset_password` already doing so. Closed alongside the new user-management actions, which all audit-log consistently now.
+
 ## [v0.4.0] - 2026-07-16
 
 Core dashboard: fan control, storage, system — the highest-value milestone, replacing `argonone-fanconfig.sh`/`argon-unitconfig.sh` and friends with the web UI. See [docs/ROADMAP.md](docs/ROADMAP.md) for what's next.
