@@ -1,0 +1,185 @@
+{% extends "app_shell.html" %}
+{% block title %}Users — argonone{% endblock %}
+{% block main %}
+<style>
+.legend{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px;}
+.leg-card{background:var(--panel);border:1px solid var(--border);border-radius:11px;padding:14px 16px;}
+.leg-role{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.leg-role b{font-size:13.5px;font-weight:600;}
+.leg-list{margin:0;padding-left:18px;color:var(--muted);font-size:12px;line-height:1.7;}
+.leg-list li.no{color:var(--muted);text-decoration:line-through;opacity:.6;}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:6px 0;}
+table.users{width:100%;border-collapse:collapse;}
+table.users th{text-align:left;font-family:var(--font-mono);font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600;padding:12px 20px 10px;border-bottom:1px solid var(--border);}
+table.users td{padding:13px 20px;border-bottom:1px solid var(--border);vertical-align:middle;}
+table.users tr:last-child td{border-bottom:none;}
+.u-cell{display:flex;align-items:center;gap:10px;}
+.u-avatar{width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:11px;font-weight:600;flex:none;}
+.u-name{font-weight:600;font-size:13.5px;line-height:1.4;}
+.u-handle{font-family:var(--font-mono);font-size:11px;color:var(--muted);line-height:1.3;}
+.u-you{color:var(--muted);font-weight:400;font-size:11.5px;}
+.badge{font-family:var(--font-mono);font-size:10.5px;padding:4px 10px;border-radius:20px;font-weight:600;}
+.badge.admin{background:var(--accent-soft);color:var(--accent);}
+.badge.operator{background:var(--good-soft);color:var(--good);}
+.badge.viewer{background:var(--bg);color:var(--muted);}
+.role-select{padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:11.5px;}
+.actions a{color:var(--muted);text-decoration:none;font-size:12.5px;font-weight:600;margin-right:14px;cursor:pointer;}
+.actions a:hover{color:var(--accent);}
+.actions a.danger:hover{color:var(--crit);}
+.small{font-family:var(--font-mono);font-size:12px;color:var(--muted);}
+.invite-card{background:var(--panel);border:1px dashed var(--border);border-radius:12px;padding:18px 20px;margin-top:16px;}
+.invite-title{font-weight:600;font-size:13.5px;margin-bottom:12px;}
+.invite-grid{display:grid;grid-template-columns:repeat(4,1fr) auto;gap:10px;align-items:end;}
+.field label{display:block;font-size:11.5px;font-weight:600;color:var(--muted);margin-bottom:6px;}
+.field input[type=text],.field select{width:100%;padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:12.5px;}
+.err{color:var(--crit);font-size:12.5px;margin-top:10px;min-height:16px;}
+</style>
+<div class="page-head">
+  <h1>Users</h1>
+  <p class="lede">Who can sign in to this device, and what they're allowed to touch.</p>
+</div>
+
+<div class="legend">
+  <div class="leg-card">
+    <div class="leg-role"><span class="badge admin">Admin</span></div>
+    <ul class="leg-list"><li>View everything</li><li>Modify hardware settings</li><li>Manage users</li></ul>
+  </div>
+  <div class="leg-card">
+    <div class="leg-role"><span class="badge operator">Operator</span></div>
+    <ul class="leg-list"><li>View everything</li><li>Modify hardware settings</li><li class="no">Manage users</li></ul>
+  </div>
+  <div class="leg-card">
+    <div class="leg-role"><span class="badge viewer">Viewer</span></div>
+    <ul class="leg-list"><li>View everything</li><li class="no">Modify hardware settings</li><li class="no">Manage users</li></ul>
+  </div>
+</div>
+
+<div class="card">
+  <table class="users" id="usersTable">
+    <thead><tr><th>User</th><th>Role</th><th>Last login</th><th>Created</th><th></th></tr></thead>
+    <tbody>
+      {% for u in users %}
+      <tr data-id="{{ u.id }}">
+        <td>
+          <div class="u-cell">
+            <div class="u-avatar">{{ (u.first_name[0] if u.first_name else u.username[0]) | upper }}</div>
+            <div>
+              <div class="u-name">
+                {% if u.first_name or u.last_name %}{{ u.first_name }} {{ u.last_name }}{% else %}{{ u.username }}{% endif %}
+                {% if u.id == current_user_id %}<span class="u-you">(you)</span>{% endif %}
+              </div>
+              <div class="u-handle">@{{ u.username }}</div>
+            </div>
+          </div>
+        </td>
+        <td>
+          {% if u.id == current_user_id %}
+          <span class="badge {{ u.role }}">{{ u.role | capitalize }}</span>
+          {% else %}
+          <select class="role-select" data-id="{{ u.id }}">
+            <option value="viewer" {% if u.role == 'viewer' %}selected{% endif %}>Viewer</option>
+            <option value="operator" {% if u.role == 'operator' %}selected{% endif %}>Operator</option>
+            <option value="admin" {% if u.role == 'admin' %}selected{% endif %}>Admin</option>
+          </select>
+          {% endif %}
+        </td>
+        <td class="small">{{ u.last_login_at if u.last_login_at is not none else "Never" }}</td>
+        <td class="small">{{ u.created_at }}</td>
+        <td class="actions">
+          <a class="reset-pw" data-id="{{ u.id }}" data-user="{{ u.username }}">Reset password</a>
+          {% if u.id != current_user_id %}<a class="danger remove-user" data-id="{{ u.id }}" data-user="{{ u.username }}">Remove</a>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="invite-card">
+  <div class="invite-title">Add a user</div>
+  <div class="invite-grid">
+    <div class="field"><label>First name</label><input type="text" id="newFirst" placeholder="e.g. Priya"></div>
+    <div class="field"><label>Last name</label><input type="text" id="newLast" placeholder="e.g. Nair"></div>
+    <div class="field"><label>Username</label><input type="text" id="newUser" placeholder="e.g. pnair"></div>
+    <div class="field"><label>Role</label>
+      <select id="newRole"><option value="viewer">Viewer</option><option value="operator">Operator</option><option value="admin">Admin</option></select>
+    </div>
+    <button class="btn" id="createBtn" type="button">Create</button>
+  </div>
+  <div class="err" id="errMsg"></div>
+</div>
+
+{% endblock %}
+{% block page_script %}
+<script>
+function roleLabel(role) { return role.charAt(0).toUpperCase() + role.slice(1); }
+
+document.getElementById('createBtn').addEventListener('click', async () => {
+  const errMsg = document.getElementById('errMsg');
+  errMsg.textContent = '';
+  const first = document.getElementById('newFirst').value.trim();
+  const last = document.getElementById('newLast').value.trim();
+  const username = document.getElementById('newUser').value.trim();
+  const role = document.getElementById('newRole').value;
+
+  if (!username) { errMsg.textContent = 'Username is required'; return; }
+
+  const resp = await fetch('/api/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, first_name: first || null, last_name: last || null, role }),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    errMsg.textContent = data.error || `create failed (${resp.status})`;
+    return;
+  }
+  const fullName = (first || last) ? `${first} ${last}`.trim() : username;
+  showToast(`${fullName} added as ${roleLabel(role)}`);
+  setTimeout(() => window.location.reload(), 900);
+});
+
+document.querySelectorAll('.reset-pw').forEach(a => {
+  a.addEventListener('click', async () => {
+    const id = a.getAttribute('data-id');
+    const resp = await fetch(`/api/users/${id}/reset-password`, { method: 'POST' });
+    if (!resp.ok) { showToast(`Reset failed (${resp.status})`); return; }
+    showToast(`Temporary password generated for ${a.getAttribute('data-user')} — they must change it at next login`);
+  });
+});
+
+document.querySelectorAll('.remove-user').forEach(a => {
+  a.addEventListener('click', async () => {
+    const id = a.getAttribute('data-id');
+    const user = a.getAttribute('data-user');
+    if (!window.confirm(`Remove ${user}? This can't be undone.`)) return;
+    const resp = await fetch(`/api/users/${id}`, { method: 'DELETE' });
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      showToast(data.error || `remove failed (${resp.status})`);
+      return;
+    }
+    document.querySelector(`tr[data-id="${id}"]`).remove();
+    showToast(`${user} removed`);
+  });
+});
+
+document.querySelectorAll('.role-select').forEach(sel => {
+  sel.addEventListener('change', async () => {
+    const id = sel.getAttribute('data-id');
+    const role = sel.value;
+    const resp = await fetch(`/api/users/${id}/role`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role }),
+    });
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      showToast(data.error || `role change failed (${resp.status})`);
+      return;
+    }
+    showToast(`Role updated to ${roleLabel(role)}`);
+  });
+});
+</script>
+{% endblock %}

@@ -11,6 +11,7 @@
       <a href="/fan" class="{% if active_page == 'fan' %}active{% endif %}">Fan control</a>
       <a href="/storage" class="{% if active_page == 'storage' %}active{% endif %}">Storage &amp; RAID</a>
       <a href="/system" class="{% if active_page == 'system' %}active{% endif %}">System</a>
+      {% if role == 'admin' %}<a href="/users" class="{% if active_page == 'users' %}active{% endif %}">Users</a>{% endif %}
     </nav>
     <div style="margin-top:auto;">
       <p style="font-size:12px;color:var(--muted);margin:0 0 8px;">{{ username }} · <span class="role-badge">{{ role }}</span></p>

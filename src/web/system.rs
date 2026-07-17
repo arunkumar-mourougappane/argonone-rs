@@ -95,5 +95,13 @@ pub async fn put_units(
     }
     state.units_tx.send_replace(unit);
 
+    let _ = sqlx::query(
+        "INSERT INTO audit_log (user_id, action, detail) VALUES (?1, 'settings.update_units', ?2)",
+    )
+    .bind(user.id)
+    .bind(format!("{{\"unit\":\"{}\"}}", body.unit))
+    .execute(&state.pool)
+    .await;
+
     Json(UnitsResponse { unit: body.unit }).into_response()
 }

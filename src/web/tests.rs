@@ -237,7 +237,9 @@ async fn non_admin_cannot_reset_passwords() {
         .await
         .unwrap();
 
-    // Seed a viewer directly — no admin UI to create one yet (v0.5.0).
+    // Seed a viewer directly, bypassing the (now real, v0.5.0) admin UI —
+    // this test is specifically about the API being unreachable to a
+    // non-admin, not about the creation flow itself.
     let viewer_id: i64 = sqlx::query_scalar(
         "INSERT INTO users (username, password_hash, role) VALUES ('viewer1', ?1, 'viewer') RETURNING id",
     )
@@ -590,4 +592,270 @@ async fn static_assets_are_served() {
             "application/javascript"
         );
     }
+}
+
+fn empty_request(method: &str, uri: &str, cookie: &str) -> Request<Body> {
+    Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("cookie", cookie)
+        .body(Body::empty())
+        .unwrap()
+}
+
+#[tokio::test]
+async fn non_admin_cannot_manage_users() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "operator1", "operator").await;
+
+    let list = router
+        .clone()
+        .oneshot(empty_request("GET", "/api/users", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(list.status(), StatusCode::FORBIDDEN);
+
+    let create = router
+        .clone()
+        .oneshot(json_request(
+            "POST",
+            "/api/users",
+            r#"{"username":"x","role":"viewer"}"#,
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(create.status(), StatusCode::FORBIDDEN);
+
+    let update_role = router
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            "/api/users/1/role",
+            r#"{"role":"admin"}"#,
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(update_role.status(), StatusCode::FORBIDDEN);
+
+    let delete = router
+        .clone()
+        .oneshot(empty_request("DELETE", "/api/users/1", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(delete.status(), StatusCode::FORBIDDEN);
+
+    let page = router
+        .clone()
+        .oneshot(empty_request("GET", "/users", &cookie))
+        .await
+        .unwrap();
+    // Not admin -> redirected away from the page entirely, not a bare 403.
+    assert_eq!(page.status(), StatusCode::SEE_OTHER);
+    assert_eq!(page.headers().get("location").unwrap(), "/");
+}
+
+#[tokio::test]
+async fn admin_can_create_list_and_delete_a_user() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "admin1", "admin").await;
+
+    let page = router
+        .clone()
+        .oneshot(empty_request("GET", "/users", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(page.status(), StatusCode::OK);
+    let page_body = page.into_body().collect().await.unwrap().to_bytes();
+    let page_html = String::from_utf8_lossy(&page_body);
+    assert!(
+        !page_html.contains("internal error rendering"),
+        "users.html failed to render: {page_html}"
+    );
+    assert!(page_html.contains("admin1"));
+
+    let create = router
+        .clone()
+        .oneshot(json_request(
+            "POST",
+            "/api/users",
+            r#"{"username":"newop","first_name":"New","last_name":"Op","role":"operator"}"#,
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(create.status(), StatusCode::OK);
+    let body = create.into_body().collect().await.unwrap().to_bytes();
+    let created: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let new_id = created["id"].as_i64().unwrap();
+    assert!(created["temporary_password"].as_str().unwrap().len() >= 8);
+
+    let list = router
+        .clone()
+        .oneshot(empty_request("GET", "/api/users", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(list.status(), StatusCode::OK);
+    let body = list.into_body().collect().await.unwrap().to_bytes();
+    let users: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(users.as_array().unwrap().iter().any(|u| u["id"] == new_id));
+
+    let update_role = router
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            &format!("/api/users/{new_id}/role"),
+            r#"{"role":"admin"}"#,
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(update_role.status(), StatusCode::OK);
+
+    let delete = router
+        .clone()
+        .oneshot(empty_request(
+            "DELETE",
+            &format!("/api/users/{new_id}"),
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(delete.status(), StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn creating_a_duplicate_username_is_rejected_with_422() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "admin1", "admin").await;
+
+    router
+        .clone()
+        .oneshot(json_request(
+            "POST",
+            "/api/users",
+            r#"{"username":"dupe","role":"viewer"}"#,
+            &cookie,
+        ))
+        .await
+        .unwrap();
+
+    let second = router
+        .clone()
+        .oneshot(json_request(
+            "POST",
+            "/api/users",
+            r#"{"username":"dupe","role":"viewer"}"#,
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(second.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn cannot_delete_or_demote_the_last_admin() {
+    let (router, pool) = test_router().await;
+    // seed_and_login's own /setup call creates the sole admin ("admin").
+    let cookie = seed_and_login(&router, &pool, "viewer1", "viewer").await;
+    let admin_cookie = {
+        let login = router
+            .clone()
+            .oneshot(form_request(
+                "POST",
+                "/login",
+                "username=admin&password=correcthorsebatterystaple",
+                None,
+            ))
+            .await
+            .unwrap();
+        extract_set_cookie(&login)
+    };
+    let admin_id: i64 = sqlx::query_scalar("SELECT id FROM users WHERE username = 'admin'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let _ = cookie; // only used to seed the viewer above
+
+    let demote = router
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            &format!("/api/users/{admin_id}/role"),
+            r#"{"role":"operator"}"#,
+            &admin_cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(demote.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    let delete = router
+        .clone()
+        .oneshot(empty_request(
+            "DELETE",
+            &format!("/api/users/{admin_id}"),
+            &admin_cookie,
+        ))
+        .await
+        .unwrap();
+    // Also blocked by the separate "can't remove your own account" guard
+    // since this admin is deleting itself, but either guard firing is
+    // correct here — the point is the last admin survives.
+    assert_eq!(delete.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    let still_there: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE id = ?1")
+        .bind(admin_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(still_there, 1);
+}
+
+#[tokio::test]
+async fn admin_cannot_remove_own_account() {
+    let (router, pool) = test_router().await;
+    router
+        .clone()
+        .oneshot(form_request(
+            "POST",
+            "/setup",
+            "username=admin&password=correcthorsebatterystaple&password_confirm=correcthorsebatterystaple",
+            None,
+        ))
+        .await
+        .unwrap();
+    // A second admin so the "last admin" guard doesn't also fire here —
+    // isolates this test to the self-delete guard specifically.
+    sqlx::query("INSERT INTO users (username, password_hash, role) VALUES ('admin2', ?1, 'admin')")
+        .bind(crate::auth::hash_password("password12345"))
+        .execute(&pool)
+        .await
+        .unwrap();
+    let login = router
+        .clone()
+        .oneshot(form_request(
+            "POST",
+            "/login",
+            "username=admin&password=correcthorsebatterystaple",
+            None,
+        ))
+        .await
+        .unwrap();
+    let cookie = extract_set_cookie(&login);
+    let admin_id: i64 = sqlx::query_scalar("SELECT id FROM users WHERE username = 'admin'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    let delete = router
+        .clone()
+        .oneshot(empty_request(
+            "DELETE",
+            &format!("/api/users/{admin_id}"),
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(delete.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }

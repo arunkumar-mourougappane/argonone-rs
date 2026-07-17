@@ -23,7 +23,7 @@ use axum::extract::{Request, State};
 use axum::http::header;
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Redirect, Response};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post, put};
 use axum_login::AuthManagerLayerBuilder;
 use axum_login::tower_sessions::cookie::SameSite;
 use axum_login::tower_sessions::{Expiry, SessionManagerLayer};
@@ -107,6 +107,10 @@ pub async fn build_router(
             "/api/users/{id}/reset-password",
             post(users::reset_password),
         )
+        .route("/users", get(users::page))
+        .route("/api/users", get(users::list).post(users::create))
+        .route("/api/users/{id}", delete(users::delete))
+        .route("/api/users/{id}/role", put(users::update_role))
         .route("/fan", get(fan_curve::page))
         .route(
             "/api/fan/curve/{curve}",

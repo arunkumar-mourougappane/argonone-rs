@@ -8,6 +8,7 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, S
 use std::path::Path;
 
 pub mod settings;
+pub mod users;
 
 pub type DbPool = SqlitePool;
 
