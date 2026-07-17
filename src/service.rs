@@ -3,7 +3,7 @@
 //! both are up (`A§4.2` minus the web-specific bits), and shuts down
 //! cleanly on SIGTERM/SIGINT.
 
-use crate::config::{ConfigPaths, FanCurve, OledConfig, RtcSchedule, TempUnit};
+use crate::config::{ConfigPaths, FanCurve, OledConfig, RtcSchedule, RtcScheduleEntry, TempUnit};
 use crate::fan::FanController;
 use crate::hardware::{self, ButtonEvent};
 use crate::oled::{OledData, Rotation, Screen};
@@ -81,9 +81,11 @@ pub async fn run() {
         });
     let unit = crate::db::settings::load_units(&pool).await;
     let oled_cfg = OledConfig::load_or_default(Path::new(ConfigPaths::OLED));
-    let rtc_schedule = RtcSchedule::load_or_default(Path::new(ConfigPaths::RTC_SCHEDULE));
+    // DB-backed as of v0.5.0 (mirrors fan curves/units); the config file
+    // stays the fallback default until something's actually been saved.
+    let mut rtc_schedule = crate::db::settings::load_rtc_schedule(&pool).await;
 
-    apply_rtc_wake_alarm(hw.rtc.as_mut(), rtc_schedule);
+    apply_rtc_wake_alarm(hw.rtc.as_mut(), &rtc_schedule);
     let mut rtc_last_sleep_trigger: Option<(u16, u8, u8, u8, u8)> = None;
 
     let (fan_speed_tx, fan_speed_rx) = tokio::sync::watch::channel(0u8);
@@ -95,6 +97,7 @@ pub async fn run() {
     let (cpu_curve_tx, mut cpu_curve_rx) = tokio::sync::watch::channel(cpu_curve.clone());
     let (hdd_curve_tx, mut hdd_curve_rx) = tokio::sync::watch::channel(hdd_curve.clone());
     let (units_tx, mut units_rx) = tokio::sync::watch::channel(unit);
+    let (rtc_schedule_tx, mut rtc_schedule_rx) = tokio::sync::watch::channel(rtc_schedule.clone());
     let bind_addr = bind_addr();
     let listener = match tokio::net::TcpListener::bind(&bind_addr).await {
         Ok(l) => l,
@@ -110,6 +113,7 @@ pub async fn run() {
         cpu_curve_tx,
         hdd_curve_tx,
         units_tx,
+        rtc_schedule_tx,
     )
     .await;
     tracing::info!(addr = %bind_addr, "web server listening");
@@ -150,11 +154,11 @@ pub async fn run() {
                 let floor = hdd_floor(&hdd_curve, last_disk_temp_c);
                 let speed = fan_controller.tick_with_floor(hw.fan.as_ref(), Instant::now(), floor);
                 fan_speed_tx.send_replace(speed);
-                if let Some(sleep_at) = rtc_schedule.sleep {
+                if rtc_schedule.enabled {
                     check_rtc_sleep_schedule(
                         hw.rtc.as_mut(),
                         hw.fan.as_ref(),
-                        sleep_at,
+                        &rtc_schedule.entries,
                         &mut rtc_last_sleep_trigger,
                     );
                 }
@@ -173,6 +177,10 @@ pub async fn run() {
             }
             Ok(()) = units_rx.changed() => {
                 oled_unit = *units_rx.borrow();
+            }
+            Ok(()) = rtc_schedule_rx.changed() => {
+                rtc_schedule = rtc_schedule_rx.borrow_and_update().clone();
+                apply_rtc_wake_alarm(hw.rtc.as_mut(), &rtc_schedule);
             }
             _ = oled_tick.tick() => {
                 if oled_cfg.enabled {
@@ -255,36 +263,49 @@ fn build_oled_data(cpu_usage: &mut sysinfo::CpuUsage, unit: TempUnit) -> OledDat
     }
 }
 
-fn apply_rtc_wake_alarm(rtc: &mut dyn hardware::RtcBackend, schedule: RtcSchedule) {
+/// Resolves the schedule's full entry table down to the single next `Wake`
+/// occurrence and arms the PCF8563's one alarm slot with it — called once
+/// at startup and again on every schedule edit (`rtc_schedule_rx`) and
+/// every self-triggered sleep, so the alarm is always armed for whichever
+/// wake comes next, not stuck on whatever was configured at boot.
+fn apply_rtc_wake_alarm(rtc: &mut dyn hardware::RtcBackend, schedule: &RtcSchedule) {
     if !schedule.enabled {
         return;
     }
+    let now = match rtc.read_time() {
+        Ok(dt) => dt,
+        Err(e) => {
+            tracing::warn!(error = %e, "RTC unavailable, cannot program wake alarm");
+            return;
+        }
+    };
+    let Some((weekday, hour, minute)) = crate::rtc_schedule::next_wake(&schedule.entries, now)
+    else {
+        tracing::debug!("no wake entries configured, nothing to arm");
+        return;
+    };
     // Clear any stale alarm flag left over from a previous fire before
-    // programming today's — a set-but-unacknowledged flag can otherwise
-    // make the alarm output look "stuck" to the case MCU.
+    // programming the next one — a set-but-unacknowledged flag can
+    // otherwise make the alarm output look "stuck" to the case MCU.
     if let Err(e) = rtc.clear_alarm() {
         tracing::debug!(error = %e, "no prior RTC alarm to clear (or RTC unavailable)");
     }
-    match rtc.set_wake_alarm(schedule.wake_hour, schedule.wake_minute) {
-        Ok(()) => tracing::info!(
-            hour = schedule.wake_hour,
-            minute = schedule.wake_minute,
-            "RTC wake alarm programmed"
-        ),
+    match rtc.set_wake_alarm(hour, minute, Some(weekday)) {
+        Ok(()) => tracing::info!(weekday, hour, minute, "RTC wake alarm programmed"),
         Err(e) => tracing::warn!(error = %e, "failed to program RTC wake alarm"),
     }
 }
 
 /// Checks the RTC's own clock (not the system clock — the RTC is the
 /// source of truth for scheduling since it keeps time across power loss,
-/// W§1.1) against the configured daily poweroff time, and triggers the
-/// same shutdown sequence the power button's `Shutdown` pulse uses.
+/// W§1.1) against the configured `Sleep` entries, and triggers the same
+/// shutdown sequence the power button's `Shutdown` pulse uses.
 /// `last_trigger` de-dupes so one matching minute doesn't poweroff-loop if
 /// something aborts the shutdown.
 fn check_rtc_sleep_schedule(
     rtc: &mut dyn hardware::RtcBackend,
     fan: &dyn hardware::FanBackend,
-    sleep_at: (u8, u8),
+    entries: &[RtcScheduleEntry],
     last_trigger: &mut Option<(u16, u8, u8, u8, u8)>,
 ) {
     let now = match rtc.read_time() {
@@ -294,7 +315,7 @@ fn check_rtc_sleep_schedule(
             return;
         }
     };
-    if (now.hour, now.minute) != sleep_at {
+    if crate::rtc_schedule::matching_sleep_entry(entries, now).is_none() {
         return;
     }
     let stamp = (now.year, now.month, now.day, now.hour, now.minute);
@@ -308,6 +329,14 @@ fn check_rtc_sleep_schedule(
         minute = now.minute,
         "RTC sleep schedule matched, shutting down"
     );
+    // Re-arm the next wake before going dark — nothing will be running to
+    // reprogram the PCF8563's one alarm slot once the Pi actually powers
+    // off, so this has to happen now, not on next boot.
+    if let Some((weekday, hour, minute)) = crate::rtc_schedule::next_wake(entries, now)
+        && let Err(e) = rtc.set_wake_alarm(hour, minute, Some(weekday))
+    {
+        tracing::warn!(error = %e, "failed to re-arm RTC wake alarm before scheduled sleep");
+    }
     if let Err(e) = fan.signal_poweroff() {
         tracing::warn!(error = %e, "failed to signal poweroff to case MCU before scheduled shutdown");
     }
@@ -374,22 +403,34 @@ pub async fn print_status() {
     println!("board:      {:?}", hw.board);
     println!("fan:        {:?}", hw.fan.capability());
 
-    match hw.rtc.read_time() {
+    let pool = crate::db::connect(&db_path()).await.ok();
+
+    let now = hw.rtc.read_time();
+    match now {
         Ok(t) => println!(
             "rtc:        {:04}-{:02}-{:02} {:02}:{:02}:{:02}",
             t.year, t.month, t.day, t.hour, t.minute, t.second
         ),
         Err(_) => println!("rtc:        unavailable"),
     }
-    let schedule = RtcSchedule::load_or_default(Path::new(ConfigPaths::RTC_SCHEDULE));
+    let schedule = match &pool {
+        Some(pool) => crate::db::settings::load_rtc_schedule(pool).await,
+        None => RtcSchedule::load_or_default(Path::new(ConfigPaths::RTC_SCHEDULE)),
+    };
     if schedule.enabled {
-        print!(
-            "rtc wake:   {:02}:{:02}",
-            schedule.wake_hour, schedule.wake_minute
-        );
-        match schedule.sleep {
-            Some((h, m)) => println!(", sleep: {h:02}:{m:02}"),
-            None => println!(", sleep: not configured"),
+        let wake_count = schedule
+            .entries
+            .iter()
+            .filter(|e| e.kind == crate::config::RtcEventKind::Wake)
+            .count();
+        let sleep_count = schedule.entries.len() - wake_count;
+        print!("rtc wake:   {wake_count} wake entries, {sleep_count} sleep entries configured");
+        match now
+            .ok()
+            .and_then(|dt| crate::rtc_schedule::next_wake(&schedule.entries, dt))
+        {
+            Some((_, h, m)) => println!(", next wake: {h:02}:{m:02}"),
+            None => println!(),
         }
     } else {
         println!("rtc wake:   disabled");
@@ -404,7 +445,6 @@ pub async fn print_status() {
         None => println!("cpu:        unavailable"),
     }
 
-    let pool = crate::db::connect(&db_path()).await.ok();
     let unit = match &pool {
         Some(pool) => crate::db::settings::load_units(pool).await,
         None => crate::config::TempUnit::load_or_default(Path::new(ConfigPaths::UNITS)),

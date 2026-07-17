@@ -87,19 +87,26 @@ impl RtcBackend for Pcf8563Rtc {
         })
     }
 
-    fn set_wake_alarm(&mut self, hour: u8, minute: u8) -> HwResult<()> {
+    fn set_wake_alarm(&mut self, hour: u8, minute: u8, weekday: Option<u8>) -> HwResult<()> {
         let mut dev = self.dev.lock().expect("RTC mutex poisoned");
         let write = |dev: &mut LinuxI2CDevice, reg: u8, value: u8| {
             dev.smbus_write_byte_data(reg, value)
                 .map_err(|e| HwError::Bus(format!("writing register {reg:#04x}: {e}")))
         };
 
-        // Daily alarm: match minute + hour, disable day-of-month/weekday
-        // matching so it fires every day.
+        // Day-of-month matching is never used (no such concept in the
+        // schedule model); weekday matching is enabled only when a
+        // specific `weekday` was requested — otherwise disabled so the
+        // alarm fires every day, same as before v0.5.0's multi-entry
+        // schedule.
         write(&mut dev, REG_MINUTE_ALARM, bcd_encode(minute))?;
         write(&mut dev, REG_HOUR_ALARM, bcd_encode(hour))?;
         write(&mut dev, REG_DAY_ALARM, ALARM_DISABLE_BIT)?;
-        write(&mut dev, REG_WEEKDAY_ALARM, ALARM_DISABLE_BIT)?;
+        let weekday_reg = match weekday {
+            Some(wd) => wd & 0x07,
+            None => ALARM_DISABLE_BIT,
+        };
+        write(&mut dev, REG_WEEKDAY_ALARM, weekday_reg)?;
 
         let status = dev
             .smbus_read_byte_data(REG_CONTROL_STATUS_2)

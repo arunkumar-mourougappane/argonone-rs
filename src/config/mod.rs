@@ -4,6 +4,7 @@
 //! reformatting anything — this stays the only source of truth until the
 //! v0.3.0 SQLite migration replaces it.
 
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::Path;
 
@@ -252,27 +253,51 @@ impl OledConfig {
     }
 }
 
-/// `/etc/argonrtc.conf`: EON RTC daily wake/sleep schedule. Not a
-/// Python-daemon legacy format (undocumented upstream, W§1.1 only
-/// describes the register map) — new to `argonone-rs`, kept in the same
-/// `key=value` style as the other config files for consistency.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One entry in an [`RtcSchedule`]'s table — "fire at `hour:minute` on any
+/// of `days`". `days` is a bitmask, bit 0 = Sunday .. bit 6 = Saturday,
+/// matching [`crate::hardware::RtcDateTime::weekday`]'s own convention.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RtcEventKind {
+    Wake,
+    Sleep,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RtcScheduleEntry {
+    pub kind: RtcEventKind,
+    pub days: u8,
+    pub hour: u8,
+    pub minute: u8,
+}
+
+/// Bitmask matching every day — the legacy config format's `wake=`/`sleep=`
+/// had no day-of-week concept at all, so its one entry always meant "every
+/// day" once ported into the multi-entry shape (v0.5.0).
+const ALL_DAYS: u8 = 0x7f;
+
+/// EON RTC wake/sleep schedule (v0.5.0: a full multi-entry, day-of-week
+/// table — `/etc/argonrtc.conf`'s original `wake=`/`sleep=HH:MM` format
+/// only had one of each, no day selection). DB-backed as of v0.5.0
+/// (`src/db/settings.rs::load_rtc_schedule`/`save_rtc_schedule`); this
+/// config-file parser stays as the fallback default when nothing's been
+/// saved to the DB yet, same relationship fan curves have to their old
+/// config files (A§3.4).
+///
+/// The PCF8563 hardware can only hold *one* armed wake alarm at a time
+/// (one weekday match, not an arbitrary set) — `src/rtc_schedule.rs`'s
+/// `next_wake` picks which single entry that should be, re-armed on every
+/// schedule change and before every scheduled sleep.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct RtcSchedule {
     pub enabled: bool,
-    pub wake_hour: u8,
-    pub wake_minute: u8,
-    /// Daily poweroff time, checked against the RTC's own clock (W§1.1) —
-    /// `None` if `sleep=` wasn't set, meaning no scheduled poweroff.
-    pub sleep: Option<(u8, u8)>,
+    pub entries: Vec<RtcScheduleEntry>,
 }
 
 impl RtcSchedule {
     pub fn disabled() -> Self {
         RtcSchedule {
             enabled: false,
-            wake_hour: 0,
-            wake_minute: 0,
-            sleep: None,
+            entries: Vec::new(),
         }
     }
 
@@ -283,7 +308,9 @@ impl RtcSchedule {
     }
 
     pub fn parse(contents: &str) -> Self {
-        let mut schedule = Self::disabled();
+        let mut enabled = false;
+        let mut wake = None;
+        let mut sleep = None;
         for line in contents.lines() {
             let line = line.trim();
             if line.is_empty() || line.starts_with('#') {
@@ -294,18 +321,30 @@ impl RtcSchedule {
             };
             let value = value.trim();
             match key.trim() {
-                "enabled" => schedule.enabled = matches!(value, "Y" | "y" | "1" | "true"),
-                "wake" => {
-                    if let Some((h, m)) = Self::parse_hh_mm(value) {
-                        schedule.wake_hour = h;
-                        schedule.wake_minute = m;
-                    }
-                }
-                "sleep" => schedule.sleep = Self::parse_hh_mm(value),
+                "enabled" => enabled = matches!(value, "Y" | "y" | "1" | "true"),
+                "wake" => wake = Self::parse_hh_mm(value),
+                "sleep" => sleep = Self::parse_hh_mm(value),
                 _ => {}
             }
         }
-        schedule
+        let mut entries = Vec::new();
+        if let Some((hour, minute)) = wake {
+            entries.push(RtcScheduleEntry {
+                kind: RtcEventKind::Wake,
+                days: ALL_DAYS,
+                hour,
+                minute,
+            });
+        }
+        if let Some((hour, minute)) = sleep {
+            entries.push(RtcScheduleEntry {
+                kind: RtcEventKind::Sleep,
+                days: ALL_DAYS,
+                hour,
+                minute,
+            });
+        }
+        RtcSchedule { enabled, entries }
     }
 
     pub fn load_or_default(path: &Path) -> Self {
@@ -540,22 +579,40 @@ mod tests {
     fn rtc_schedule_parses_wake_and_sleep_time() {
         let schedule = RtcSchedule::parse("enabled=Y\nwake=07:30\nsleep=23:00\n");
         assert!(schedule.enabled);
-        assert_eq!(schedule.wake_hour, 7);
-        assert_eq!(schedule.wake_minute, 30);
-        assert_eq!(schedule.sleep, Some((23, 0)));
+        assert_eq!(
+            schedule.entries,
+            vec![
+                RtcScheduleEntry {
+                    kind: RtcEventKind::Wake,
+                    days: ALL_DAYS,
+                    hour: 7,
+                    minute: 30
+                },
+                RtcScheduleEntry {
+                    kind: RtcEventKind::Sleep,
+                    days: ALL_DAYS,
+                    hour: 23,
+                    minute: 0
+                },
+            ]
+        );
     }
 
     #[test]
     fn rtc_schedule_rejects_out_of_range_time() {
         let schedule = RtcSchedule::parse("wake=25:99\n");
-        assert_eq!(schedule.wake_hour, 0);
-        assert_eq!(schedule.wake_minute, 0);
+        assert!(schedule.entries.is_empty());
     }
 
     #[test]
     fn rtc_schedule_sleep_defaults_to_none() {
         let schedule = RtcSchedule::parse("wake=07:30\n");
-        assert_eq!(schedule.sleep, None);
+        assert!(
+            schedule
+                .entries
+                .iter()
+                .all(|e| e.kind != RtcEventKind::Sleep)
+        );
     }
 
     #[test]

@@ -13,10 +13,24 @@ table.kv td{padding:8px 0;border-bottom:1px solid var(--border);}
 table.kv td:first-child{color:var(--muted);}
 table.kv td:last-child{text-align:right;font-family:var(--font-mono);}
 .err{color:var(--crit);font-size:12.5px;margin-top:10px;}
+table.sched{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:14px;}
+table.sched th{text-align:left;font-family:var(--font-mono);font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600;padding:0 10px 8px;border-bottom:1px solid var(--border);}
+table.sched td{padding:9px 10px;border-bottom:1px solid var(--border);}
+.badge{font-family:var(--font-mono);font-size:10.5px;padding:3px 9px;border-radius:20px;font-weight:600;}
+.badge.wake{background:var(--good-soft);color:var(--good);}
+.badge.sleep{background:var(--accent-soft);color:var(--accent);}
+.rm-row{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;}
+.rm-row:hover{color:var(--crit);}
+.addbtn{background:none;border:1px dashed var(--border);color:var(--accent);font-family:var(--font-ui);font-weight:600;font-size:12.5px;padding:8px 14px;border-radius:8px;cursor:pointer;}
+.day-toggles{display:inline-flex;gap:4px;margin-right:10px;}
+.day-toggle{width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-family:var(--font-mono);font-size:11px;font-weight:600;cursor:pointer;}
+.day-toggle.on{background:var(--accent-soft);color:var(--accent);border-color:var(--accent);}
+.new-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:12px;}
+.new-row input[type=time]{padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:12.5px;}
 </style>
 <div class="page-head">
   <h1>System</h1>
-  <p class="lede">Units and firmware/service info. Power schedule, IR remote, and HTTPS land in later milestones.</p>
+  <p class="lede">Units, firmware/service info{% if is_eon %}, and the Power &amp; RTC schedule{% endif %}. IR remote and HTTPS land in later milestones.</p>
 </div>
 
 <div class="card">
@@ -32,6 +46,29 @@ table.kv td:last-child{text-align:right;font-family:var(--font-mono);}
   <p>{{ "Celsius" if unit == "C" else "Fahrenheit" }} (viewer role — ask an operator or admin to change this)</p>
   {% endif %}
 </div>
+
+{% if is_eon %}
+<div class="card" id="power">
+  <div class="card-title">Power &amp; RTC</div>
+  <p class="card-sub">Wake and sleep schedule, checked against the RTC's own clock — survives a power loss, not driven by the system clock.</p>
+  <table class="sched" id="schedTable">
+    <thead><tr><th>Type</th><th>Days</th><th>Time</th><th></th></tr></thead>
+    <tbody id="schedBody"></tbody>
+  </table>
+  {% if can_edit %}
+  <div class="new-row">
+    <span class="seg" id="kindSeg">
+      <button class="active" data-kind="Wake" type="button">Wake</button>
+      <button data-kind="Sleep" type="button">Sleep</button>
+    </span>
+    <span class="day-toggles" id="dayToggles"></span>
+    <input type="time" id="newTime" value="07:30">
+    <button class="addbtn" id="addSchedBtn" type="button">+ Add schedule</button>
+  </div>
+  <div class="err" id="schedErr"></div>
+  {% endif %}
+</div>
+{% endif %}
 
 <div class="card">
   <div class="card-title">Firmware &amp; service</div>
@@ -64,6 +101,105 @@ document.querySelectorAll('#unitsSeg button').forEach(btn => {
     showToast(btn.dataset.unit === 'C' ? 'Units set to Celsius' : 'Units set to Fahrenheit');
   });
 });
+</script>
+{% endif %}
+{% if is_eon %}
+<script>
+const CAN_EDIT_SCHED = {{ can_edit | tojson }};
+let schedule = {{ rtc_schedule | tojson }};
+const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function daysLabel(mask) {
+  if (mask === 0x7f) return 'Every day';
+  if (mask === 0b0111110) return 'Weekdays';
+  if (mask === 0b1000001) return 'Weekends';
+  const names = [];
+  for (let d = 0; d < 7; d++) { if (mask & (1 << d)) names.push(DAY_NAMES[d]); }
+  return names.join(', ') || '—';
+}
+
+function renderSchedule() {
+  const body = document.getElementById('schedBody');
+  body.innerHTML = '';
+  schedule.entries.forEach((entry, i) => {
+    const tr = document.createElement('tr');
+    const kindClass = entry.kind === 'Wake' ? 'wake' : 'sleep';
+    const time = `${String(entry.hour).padStart(2, '0')}:${String(entry.minute).padStart(2, '0')}`;
+    tr.innerHTML = `<td><span class="badge ${kindClass}">${entry.kind}</span></td>` +
+      `<td>${daysLabel(entry.days)}</td>` +
+      `<td class="small">${time}</td>` +
+      `<td>${CAN_EDIT_SCHED ? `<button class="rm-row" data-i="${i}" type="button">×</button>` : ''}</td>`;
+    body.appendChild(tr);
+  });
+  if (CAN_EDIT_SCHED) {
+    body.querySelectorAll('.rm-row').forEach(btn => {
+      btn.addEventListener('click', () => {
+        schedule.entries.splice(+btn.getAttribute('data-i'), 1);
+        saveSchedule();
+      });
+    });
+  }
+}
+
+async function saveSchedule() {
+  const errEl = document.getElementById('schedErr');
+  errEl.textContent = '';
+  // No separate on/off switch in this UI (matching 08-system-settings.html's
+  // Power & RTC card) — a schedule with at least one entry is enabled,
+  // an empty one isn't. Without this, a fresh install's enabled:false
+  // default would silently persist after adding the first entry, saving
+  // a schedule that's configured but never fires.
+  schedule.enabled = schedule.entries.length > 0;
+  const resp = await fetch('/api/rtc/schedule', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(schedule),
+  });
+  if (!resp.ok) {
+    const data = await resp.json().catch(() => ({}));
+    errEl.textContent = data.error || `save failed (${resp.status})`;
+    return;
+  }
+  schedule = await resp.json();
+  renderSchedule();
+  showToast('Power schedule updated');
+}
+
+renderSchedule();
+
+if (CAN_EDIT_SCHED) {
+  const dayToggles = document.getElementById('dayToggles');
+  let selectedDays = 0x7f;
+  DAY_LETTERS.forEach((letter, i) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'day-toggle on';
+    btn.textContent = letter;
+    btn.addEventListener('click', () => {
+      selectedDays ^= (1 << i);
+      btn.classList.toggle('on');
+    });
+    dayToggles.appendChild(btn);
+  });
+
+  let selectedKind = 'Wake';
+  document.querySelectorAll('#kindSeg button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#kindSeg button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedKind = btn.getAttribute('data-kind');
+    });
+  });
+
+  document.getElementById('addSchedBtn').addEventListener('click', () => {
+    const errEl = document.getElementById('schedErr');
+    if (selectedDays === 0) { errEl.textContent = 'Select at least one day'; return; }
+    const [h, m] = document.getElementById('newTime').value.split(':').map(Number);
+    schedule.entries.push({ kind: selectedKind, days: selectedDays, hour: h, minute: m });
+    saveSchedule();
+  });
+}
 </script>
 {% endif %}
 {% endblock %}

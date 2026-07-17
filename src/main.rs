@@ -6,6 +6,7 @@ mod db;
 mod fan;
 mod hardware;
 mod oled;
+mod rtc_schedule;
 mod service;
 mod sysinfo;
 mod web;

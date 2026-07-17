@@ -1,6 +1,6 @@
-//! System page (v0.4.0, mirrors the `08-system-settings.html` "Units"
-//! and "Firmware & service" cards only — power schedule/IR/HTTPS/danger
-//! zone are later milestones per `docs/ROADMAP.md`'s v0.4.0 scope note).
+//! System page: mirrors `08-system-settings.html`'s "Units" and
+//! "Firmware & service" cards (v0.4.0), plus the "Power & RTC" schedule
+//! card (v0.5.0, EON-only — IR/HTTPS/danger zone stay later milestones).
 
 use super::AppState;
 use super::templates::render;
@@ -29,10 +29,16 @@ pub async fn page(auth_session: AuthSession, State(state): State<AppState>) -> R
     };
 
     let unit = crate::db::settings::load_units(&state.pool).await;
+    let is_eon = state.board == crate::hardware::board::Board::Eon;
     let board = match state.board {
         crate::hardware::board::Board::NoCase => "No case detected",
         crate::hardware::board::Board::One => "Argon ONE",
         crate::hardware::board::Board::Eon => "Argon EON",
+    };
+    let rtc_schedule = if is_eon {
+        Some(crate::db::settings::load_rtc_schedule(&state.pool).await)
+    } else {
+        None
     };
 
     let html: Html<String> = render(
@@ -47,6 +53,8 @@ pub async fn page(auth_session: AuthSession, State(state): State<AppState>) -> R
             version => env!("CARGO_PKG_VERSION"),
             board => board,
             os => os_release_pretty_name().unwrap_or_else(|| "unknown".to_string()),
+            is_eon => is_eon,
+            rtc_schedule => rtc_schedule,
         },
     );
     html.into_response()

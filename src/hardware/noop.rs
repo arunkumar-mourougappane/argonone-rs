@@ -56,7 +56,7 @@ impl RtcBackend for NoopRtc {
         Err(super::HwError::Bus("no RTC attached".to_string()))
     }
 
-    fn set_wake_alarm(&mut self, _hour: u8, _minute: u8) -> HwResult<()> {
+    fn set_wake_alarm(&mut self, _hour: u8, _minute: u8, _weekday: Option<u8>) -> HwResult<()> {
         Err(super::HwError::Bus("no RTC attached".to_string()))
     }
 
@@ -91,7 +91,7 @@ mod tests {
     fn noop_rtc_reports_unavailable() {
         let mut rtc = NoopRtc;
         assert!(rtc.read_time().is_err());
-        assert!(rtc.set_wake_alarm(7, 30).is_err());
+        assert!(rtc.set_wake_alarm(7, 30, None).is_err());
         assert!(rtc.clear_alarm().is_err());
     }
 

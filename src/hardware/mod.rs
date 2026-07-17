@@ -119,9 +119,15 @@ pub struct RtcDateTime {
 /// to drive it.
 pub trait RtcBackend: Send + Sync {
     fn read_time(&mut self) -> HwResult<RtcDateTime>;
-    /// Program a daily wake alarm at `hour:minute` (day-of-month and
-    /// weekday match disabled, so it fires every day).
-    fn set_wake_alarm(&mut self, hour: u8, minute: u8) -> HwResult<()>;
+    /// Program the wake alarm at `hour:minute`. `weekday` (0 = Sunday .. 6
+    /// = Saturday, matching [`RtcDateTime::weekday`]) restricts the match
+    /// to that one day when `Some`; `None` disables day-of-month/weekday
+    /// matching entirely, so it fires every day. The PCF8563 has exactly
+    /// one alarm slot — it can hold "every day" or "one specific weekday",
+    /// never an arbitrary multi-day set — so a multi-entry schedule
+    /// (v0.5.0, `src/rtc_schedule.rs`) always resolves to a single
+    /// `Some(weekday)` call for whichever entry is soonest.
+    fn set_wake_alarm(&mut self, hour: u8, minute: u8, weekday: Option<u8>) -> HwResult<()>;
     fn clear_alarm(&mut self) -> HwResult<()>;
 }
 

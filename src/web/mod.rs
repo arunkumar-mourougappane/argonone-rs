@@ -5,6 +5,7 @@
 mod dashboard;
 mod fan_curve;
 mod login;
+mod rtc;
 mod setup;
 mod status;
 mod storage;
@@ -16,7 +17,7 @@ mod users;
 mod ws;
 
 use crate::auth::Backend;
-use crate::config::{FanCurve, TempUnit};
+use crate::config::{FanCurve, RtcSchedule, TempUnit};
 use crate::db::DbPool;
 use axum::Router;
 use axum::extract::{Request, State};
@@ -52,6 +53,7 @@ pub struct AppState {
     pub cpu_curve_tx: tokio::sync::watch::Sender<FanCurve>,
     pub hdd_curve_tx: tokio::sync::watch::Sender<FanCurve>,
     pub units_tx: tokio::sync::watch::Sender<TempUnit>,
+    pub rtc_schedule_tx: tokio::sync::watch::Sender<RtcSchedule>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -62,6 +64,7 @@ pub async fn build_router(
     cpu_curve_tx: tokio::sync::watch::Sender<FanCurve>,
     hdd_curve_tx: tokio::sync::watch::Sender<FanCurve>,
     units_tx: tokio::sync::watch::Sender<TempUnit>,
+    rtc_schedule_tx: tokio::sync::watch::Sender<RtcSchedule>,
 ) -> Router {
     let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
         .fetch_one(&pool)
@@ -77,6 +80,7 @@ pub async fn build_router(
         cpu_curve_tx,
         hdd_curve_tx,
         units_tx,
+        rtc_schedule_tx,
     };
 
     let session_store = SqliteStore::new(pool);
@@ -121,6 +125,10 @@ pub async fn build_router(
         .route(
             "/api/settings/units",
             get(system::get_units).put(system::put_units),
+        )
+        .route(
+            "/api/rtc/schedule",
+            get(rtc::get_schedule).put(rtc::put_schedule),
         )
         .route_layer(middleware::from_fn(login::require_login));
 

@@ -11,6 +11,12 @@ use http_body_util::BodyExt;
 use tower::ServiceExt;
 
 async fn test_router() -> (Router, crate::db::DbPool) {
+    test_router_with_board(crate::hardware::board::Board::NoCase).await
+}
+
+async fn test_router_with_board(
+    board: crate::hardware::board::Board,
+) -> (Router, crate::db::DbPool) {
     let dir = tempfile::tempdir().unwrap();
     // Leak the tempdir so it outlives the router (test-only, bounded by
     // process lifetime) — the pool holds an open handle to the file.
@@ -20,13 +26,15 @@ async fn test_router() -> (Router, crate::db::DbPool) {
     let (cpu_tx, _) = tokio::sync::watch::channel(crate::config::FanCurve::default_curve());
     let (hdd_tx, _) = tokio::sync::watch::channel(crate::config::FanCurve::default_curve());
     let (units_tx, _) = tokio::sync::watch::channel(crate::config::TempUnit::Celsius);
+    let (rtc_schedule_tx, _) = tokio::sync::watch::channel(crate::config::RtcSchedule::disabled());
     let router = build_router(
         pool.clone(),
-        crate::hardware::board::Board::NoCase,
+        board,
         rx,
         cpu_tx,
         hdd_tx,
         units_tx,
+        rtc_schedule_tx,
     )
     .await;
     (router, pool)
@@ -577,6 +585,37 @@ async fn fan_storage_and_system_pages_render_for_logged_in_users() {
     }
 }
 
+/// `fan_storage_and_system_pages_render_for_logged_in_users` runs against
+/// `Board::NoCase`, which skips the whole `{% if is_eon %}` Power & RTC
+/// card — its Jinja never gets exercised there. Cover it explicitly, for
+/// both a viewer (read-only) and an operator (with the add-schedule
+/// controls), since `render()` swallows template errors into a 200 with
+/// an error-string body rather than a non-200 status.
+#[tokio::test]
+async fn system_page_renders_rtc_card_on_eon_board() {
+    let (router, pool) = test_router_with_board(crate::hardware::board::Board::Eon).await;
+
+    for (username, role) in [("viewer1", "viewer"), ("op1", "operator")] {
+        let cookie = seed_and_login(&router, &pool, username, role).await;
+        let resp = router
+            .clone()
+            .oneshot(empty_request("GET", "/system", &cookie))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let html = String::from_utf8_lossy(&body);
+        assert!(
+            !html.contains("internal error rendering"),
+            "system.html failed to render for {role}: {html}"
+        );
+        assert!(
+            html.contains("Power &amp; RTC"),
+            "{role} should see the RTC card"
+        );
+    }
+}
+
 #[tokio::test]
 async fn static_assets_are_served() {
     let (router, _pool) = test_router().await;
@@ -858,4 +897,127 @@ async fn admin_cannot_remove_own_account() {
         .await
         .unwrap();
     assert_eq!(delete.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn rtc_endpoints_404_on_non_eon_board() {
+    let (router, pool) = test_router().await; // defaults to Board::NoCase
+    let cookie = seed_and_login(&router, &pool, "viewer1", "viewer").await;
+
+    let get = router
+        .clone()
+        .oneshot(empty_request("GET", "/api/rtc/schedule", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(get.status(), StatusCode::NOT_FOUND);
+
+    let put = router
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            "/api/rtc/schedule",
+            r#"{"enabled":true,"entries":[]}"#,
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(put.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn viewer_cannot_write_rtc_schedule_but_can_read_it() {
+    let (router, pool) = test_router_with_board(crate::hardware::board::Board::Eon).await;
+    let viewer_cookie = seed_and_login(&router, &pool, "viewer1", "viewer").await;
+
+    let get = router
+        .clone()
+        .oneshot(empty_request("GET", "/api/rtc/schedule", &viewer_cookie))
+        .await
+        .unwrap();
+    assert_eq!(get.status(), StatusCode::OK);
+
+    let forbidden = router
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            "/api/rtc/schedule",
+            r#"{"enabled":true,"entries":[{"kind":"Wake","days":127,"hour":7,"minute":30}]}"#,
+            &viewer_cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
+
+    let op_cookie = {
+        sqlx::query(
+            "INSERT INTO users (username, password_hash, role) VALUES ('op1', ?1, 'operator')",
+        )
+        .bind(crate::auth::hash_password("password12345"))
+        .execute(&pool)
+        .await
+        .unwrap();
+        let login_resp = router
+            .clone()
+            .oneshot(form_request(
+                "POST",
+                "/login",
+                "username=op1&password=password12345",
+                None,
+            ))
+            .await
+            .unwrap();
+        extract_set_cookie(&login_resp)
+    };
+
+    let ok = router
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            "/api/rtc/schedule",
+            r#"{"enabled":true,"entries":[{"kind":"Wake","days":127,"hour":7,"minute":30}]}"#,
+            &op_cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(ok.status(), StatusCode::OK);
+
+    let after = router
+        .clone()
+        .oneshot(empty_request("GET", "/api/rtc/schedule", &viewer_cookie))
+        .await
+        .unwrap();
+    let body = after.into_body().collect().await.unwrap().to_bytes();
+    let schedule: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(schedule["enabled"], true);
+    assert_eq!(schedule["entries"][0]["hour"], 7);
+}
+
+#[tokio::test]
+async fn rtc_schedule_rejects_invalid_entries() {
+    let (router, pool) = test_router_with_board(crate::hardware::board::Board::Eon).await;
+    let cookie = seed_and_login(&router, &pool, "op1", "operator").await;
+
+    let bad_hour = router
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            "/api/rtc/schedule",
+            r#"{"enabled":true,"entries":[{"kind":"Wake","days":127,"hour":24,"minute":0}]}"#,
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(bad_hour.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    let no_days = router
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            "/api/rtc/schedule",
+            r#"{"enabled":true,"entries":[{"kind":"Wake","days":0,"hour":7,"minute":0}]}"#,
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(no_days.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
