@@ -54,6 +54,7 @@ pub async fn page(auth_session: AuthSession, State(state): State<AppState>) -> R
             active_page => "users",
             current_user_id => user.id,
             users => users,
+            is_eon => state.board == crate::hardware::board::Board::Eon,
         },
     );
     html.into_response()

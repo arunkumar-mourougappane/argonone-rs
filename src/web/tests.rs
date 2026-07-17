@@ -27,6 +27,10 @@ async fn test_router_with_board(
     let (hdd_tx, _) = tokio::sync::watch::channel(crate::config::FanCurve::default_curve());
     let (units_tx, _) = tokio::sync::watch::channel(crate::config::TempUnit::Celsius);
     let (rtc_schedule_tx, _) = tokio::sync::watch::channel(crate::config::RtcSchedule::disabled());
+    let (oled_config_tx, _) =
+        tokio::sync::watch::channel(crate::config::OledConfig::default_config());
+    let (_oled_screen_tx, oled_screen_rx) =
+        tokio::sync::watch::channel(None::<crate::oled::Screen>);
     let router = build_router(
         pool.clone(),
         board,
@@ -35,6 +39,8 @@ async fn test_router_with_board(
         hdd_tx,
         units_tx,
         rtc_schedule_tx,
+        oled_config_tx,
+        oled_screen_rx,
     )
     .await;
     (router, pool)
@@ -1020,4 +1026,207 @@ async fn rtc_schedule_rejects_invalid_entries() {
         .await
         .unwrap();
     assert_eq!(no_days.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn oled_endpoints_404_on_non_eon_board() {
+    let (router, pool) = test_router().await; // defaults to Board::NoCase
+    let cookie = seed_and_login(&router, &pool, "viewer1", "viewer").await;
+
+    for (method, uri) in [
+        ("GET", "/display"),
+        ("GET", "/api/oled/config"),
+        ("GET", "/api/oled/preview"),
+    ] {
+        let resp = router
+            .clone()
+            .oneshot(empty_request(method, uri, &cookie))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND, "{method} {uri}");
+    }
+
+    let put = router
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            "/api/oled/config",
+            r#"{"switch_duration_secs":10,"screensaver_secs":120,"screenlist":"clock ip","enabled":true}"#,
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(put.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn oled_page_and_config_render_and_round_trip_on_eon_board() {
+    let (router, pool) = test_router_with_board(crate::hardware::board::Board::Eon).await;
+
+    for (username, role) in [("viewer1", "viewer"), ("op1", "operator")] {
+        let cookie = seed_and_login(&router, &pool, username, role).await;
+        let resp = router
+            .clone()
+            .oneshot(empty_request("GET", "/display", &cookie))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let html = String::from_utf8_lossy(&body);
+        assert!(
+            !html.contains("internal error rendering"),
+            "oled.html failed to render for {role}: {html}"
+        );
+    }
+
+    let viewer_cookie = seed_and_login(&router, &pool, "viewer2", "viewer").await;
+    let get = router
+        .clone()
+        .oneshot(empty_request("GET", "/api/oled/config", &viewer_cookie))
+        .await
+        .unwrap();
+    assert_eq!(get.status(), StatusCode::OK);
+
+    let forbidden = router
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            "/api/oled/config",
+            r#"{"switch_duration_secs":15,"screensaver_secs":60,"screenlist":"clock ip cpu","enabled":true}"#,
+            &viewer_cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
+
+    let op_cookie = {
+        sqlx::query(
+            "INSERT INTO users (username, password_hash, role) VALUES ('op2', ?1, 'operator')",
+        )
+        .bind(crate::auth::hash_password("password12345"))
+        .execute(&pool)
+        .await
+        .unwrap();
+        let login_resp = router
+            .clone()
+            .oneshot(form_request(
+                "POST",
+                "/login",
+                "username=op2&password=password12345",
+                None,
+            ))
+            .await
+            .unwrap();
+        extract_set_cookie(&login_resp)
+    };
+
+    let ok = router
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            "/api/oled/config",
+            r#"{"switch_duration_secs":15,"screensaver_secs":60,"screenlist":"clock ip cpu","enabled":true}"#,
+            &op_cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(ok.status(), StatusCode::OK);
+
+    let after = router
+        .clone()
+        .oneshot(empty_request("GET", "/api/oled/config", &viewer_cookie))
+        .await
+        .unwrap();
+    let body = after.into_body().collect().await.unwrap().to_bytes();
+    let cfg: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(cfg["switch_duration_secs"], 15);
+    assert_eq!(cfg["screenlist"], "clock ip cpu");
+}
+
+#[tokio::test]
+async fn oled_config_rejects_out_of_range_timing() {
+    let (router, pool) = test_router_with_board(crate::hardware::board::Board::Eon).await;
+    let cookie = seed_and_login(&router, &pool, "op1", "operator").await;
+
+    let bad = router
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            "/api/oled/config",
+            r#"{"switch_duration_secs":9999,"screensaver_secs":60,"screenlist":"clock","enabled":true}"#,
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(bad.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+/// The test router's `oled_screen` channel starts at `None` (nothing
+/// rendered yet, matching a freshly-started daemon before its first OLED
+/// tick) — the preview endpoint should report that as a valid "blanked"
+/// state, not an error.
+#[tokio::test]
+async fn oled_preview_reports_blanked_when_nothing_shown_yet() {
+    let (router, pool) = test_router_with_board(crate::hardware::board::Board::Eon).await;
+    let cookie = seed_and_login(&router, &pool, "viewer1", "viewer").await;
+
+    let resp = router
+        .clone()
+        .oneshot(empty_request("GET", "/api/oled/preview", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let preview: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(preview["screen"], serde_json::Value::Null);
+    assert_eq!(preview["bits"], serde_json::Value::Null);
+    assert_eq!(preview["width"], 128);
+    assert_eq!(preview["height"], 64);
+}
+
+/// Exercises the actual render path (not just the blanked-state branch):
+/// a real 128x64-pixel-array response for a genuinely selected screen.
+#[tokio::test]
+async fn oled_preview_renders_the_currently_selected_screen() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = Box::leak(Box::new(dir)).path().join("t.db");
+    let pool = crate::db::connect(&path).await.unwrap();
+    let (_tx, rx) = tokio::sync::watch::channel(0u8);
+    let (cpu_tx, _) = tokio::sync::watch::channel(crate::config::FanCurve::default_curve());
+    let (hdd_tx, _) = tokio::sync::watch::channel(crate::config::FanCurve::default_curve());
+    let (units_tx, _) = tokio::sync::watch::channel(crate::config::TempUnit::Celsius);
+    let (rtc_schedule_tx, _) = tokio::sync::watch::channel(crate::config::RtcSchedule::disabled());
+    let (oled_config_tx, _) =
+        tokio::sync::watch::channel(crate::config::OledConfig::default_config());
+    let (_oled_screen_tx, oled_screen_rx) =
+        tokio::sync::watch::channel(Some(crate::oled::Screen::Clock));
+    let router = build_router(
+        pool.clone(),
+        crate::hardware::board::Board::Eon,
+        rx,
+        cpu_tx,
+        hdd_tx,
+        units_tx,
+        rtc_schedule_tx,
+        oled_config_tx,
+        oled_screen_rx,
+    )
+    .await;
+
+    let cookie = seed_and_login(&router, &pool, "viewer1", "viewer").await;
+    let resp = router
+        .clone()
+        .oneshot(empty_request("GET", "/api/oled/preview", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let preview: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(preview["screen"], "clock");
+    let bits = preview["bits"].as_array().unwrap();
+    assert_eq!(bits.len(), 1024); // 128*64/8
+    assert!(
+        bits.iter().any(|b| b.as_u64().unwrap() != 0),
+        "clock screen should light at least one pixel"
+    );
 }

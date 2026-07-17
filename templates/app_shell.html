@@ -10,6 +10,7 @@
       <a href="/" class="{% if active_page == 'dashboard' %}active{% endif %}">Dashboard</a>
       <a href="/fan" class="{% if active_page == 'fan' %}active{% endif %}">Fan control</a>
       <a href="/storage" class="{% if active_page == 'storage' %}active{% endif %}">Storage &amp; RAID</a>
+      {% if is_eon %}<a href="/display" class="{% if active_page == 'oled' %}active{% endif %}">Display</a>{% endif %}
       <a href="/system" class="{% if active_page == 'system' %}active{% endif %}">System</a>
       {% if role == 'admin' %}<a href="/users" class="{% if active_page == 'users' %}active{% endif %}">Users</a>{% endif %}
     </nav>

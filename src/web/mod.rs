@@ -5,6 +5,7 @@
 mod dashboard;
 mod fan_curve;
 mod login;
+mod oled;
 mod rtc;
 mod setup;
 mod status;
@@ -17,8 +18,9 @@ mod users;
 mod ws;
 
 use crate::auth::Backend;
-use crate::config::{FanCurve, RtcSchedule, TempUnit};
+use crate::config::{FanCurve, OledConfig, RtcSchedule, TempUnit};
 use crate::db::DbPool;
+use crate::oled::Screen;
 use axum::Router;
 use axum::extract::{Request, State};
 use axum::http::header;
@@ -54,6 +56,11 @@ pub struct AppState {
     pub hdd_curve_tx: tokio::sync::watch::Sender<FanCurve>,
     pub units_tx: tokio::sync::watch::Sender<TempUnit>,
     pub rtc_schedule_tx: tokio::sync::watch::Sender<RtcSchedule>,
+    pub oled_config_tx: tokio::sync::watch::Sender<OledConfig>,
+    /// Published by the service loop's OLED render tick, not a web write
+    /// path — the live preview (`src/web/oled.rs`) and `/api/ws`'s
+    /// `oled_screen` message both read from this.
+    pub oled_screen: tokio::sync::watch::Receiver<Option<Screen>>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -65,6 +72,8 @@ pub async fn build_router(
     hdd_curve_tx: tokio::sync::watch::Sender<FanCurve>,
     units_tx: tokio::sync::watch::Sender<TempUnit>,
     rtc_schedule_tx: tokio::sync::watch::Sender<RtcSchedule>,
+    oled_config_tx: tokio::sync::watch::Sender<OledConfig>,
+    oled_screen: tokio::sync::watch::Receiver<Option<Screen>>,
 ) -> Router {
     let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
         .fetch_one(&pool)
@@ -81,6 +90,8 @@ pub async fn build_router(
         hdd_curve_tx,
         units_tx,
         rtc_schedule_tx,
+        oled_config_tx,
+        oled_screen,
     };
 
     let session_store = SqliteStore::new(pool);
@@ -130,6 +141,12 @@ pub async fn build_router(
             "/api/rtc/schedule",
             get(rtc::get_schedule).put(rtc::put_schedule),
         )
+        .route("/display", get(oled::page))
+        .route(
+            "/api/oled/config",
+            get(oled::get_config).put(oled::put_config),
+        )
+        .route("/api/oled/preview", get(oled::get_preview))
         .route_layer(middleware::from_fn(login::require_login));
 
     let public = Router::new()

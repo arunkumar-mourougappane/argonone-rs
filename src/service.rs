@@ -3,7 +3,7 @@
 //! both are up (`A§4.2` minus the web-specific bits), and shuts down
 //! cleanly on SIGTERM/SIGINT.
 
-use crate::config::{ConfigPaths, FanCurve, OledConfig, RtcSchedule, RtcScheduleEntry, TempUnit};
+use crate::config::{ConfigPaths, FanCurve, RtcSchedule, RtcScheduleEntry, TempUnit};
 use crate::fan::FanController;
 use crate::hardware::{self, ButtonEvent};
 use crate::oled::{OledData, Rotation, Screen};
@@ -80,9 +80,9 @@ pub async fn run() {
             FanCurve::default_curve()
         });
     let unit = crate::db::settings::load_units(&pool).await;
-    let oled_cfg = OledConfig::load_or_default(Path::new(ConfigPaths::OLED));
     // DB-backed as of v0.5.0 (mirrors fan curves/units); the config file
     // stays the fallback default until something's actually been saved.
+    let mut oled_cfg = crate::db::settings::load_oled_config(&pool).await;
     let mut rtc_schedule = crate::db::settings::load_rtc_schedule(&pool).await;
 
     apply_rtc_wake_alarm(hw.rtc.as_mut(), &rtc_schedule);
@@ -98,6 +98,8 @@ pub async fn run() {
     let (hdd_curve_tx, mut hdd_curve_rx) = tokio::sync::watch::channel(hdd_curve.clone());
     let (units_tx, mut units_rx) = tokio::sync::watch::channel(unit);
     let (rtc_schedule_tx, mut rtc_schedule_rx) = tokio::sync::watch::channel(rtc_schedule.clone());
+    let (oled_config_tx, mut oled_config_rx) = tokio::sync::watch::channel(oled_cfg.clone());
+    let (oled_screen_tx, oled_screen_rx) = tokio::sync::watch::channel(None::<Screen>);
     let bind_addr = bind_addr();
     let listener = match tokio::net::TcpListener::bind(&bind_addr).await {
         Ok(l) => l,
@@ -114,6 +116,8 @@ pub async fn run() {
         hdd_curve_tx,
         units_tx,
         rtc_schedule_tx,
+        oled_config_tx,
+        oled_screen_rx,
     )
     .await;
     tracing::info!(addr = %bind_addr, "web server listening");
@@ -182,6 +186,22 @@ pub async fn run() {
                 rtc_schedule = rtc_schedule_rx.borrow_and_update().clone();
                 apply_rtc_wake_alarm(hw.rtc.as_mut(), &rtc_schedule);
             }
+            Ok(()) = oled_config_rx.changed() => {
+                oled_cfg = oled_config_rx.borrow_and_update().clone();
+                rotation = Rotation::new(
+                    Screen::parse_list(&oled_cfg.screenlist),
+                    Duration::from_secs(oled_cfg.switch_duration_secs.max(1) as u64),
+                    oled_cfg.screensaver_duration(),
+                    Instant::now(),
+                );
+                oled_shown_screen = None;
+                if !oled_cfg.enabled {
+                    oled_screen_tx.send_replace(None);
+                    if let Err(e) = hw.oled.clear() {
+                        tracing::warn!(error = %e, "failed to clear OLED after disabling the panel");
+                    }
+                }
+            }
             _ = oled_tick.tick() => {
                 if oled_cfg.enabled {
                     render_oled_tick(
@@ -190,6 +210,7 @@ pub async fn run() {
                         &mut oled_shown_screen,
                         &mut oled_cpu_usage,
                         oled_unit,
+                        &oled_screen_tx,
                     );
                 }
             }
@@ -206,22 +227,31 @@ pub async fn run() {
 
 /// Advance the rotation state machine and (re-)render only when the
 /// screen to display actually changed, so a static screen isn't
-/// needlessly re-flushed over I2C every second.
+/// needlessly re-flushed over I2C every second. Also publishes the
+/// currently-selected screen on `screen_tx` (v0.5.0) whenever the
+/// *selection* changes (not every clock-tick redraw) — the web layer's
+/// live preview watches this to know when to re-fetch a fresh render,
+/// and the `/api/ws` connection forwards it as an `oled_screen` message.
 fn render_oled_tick(
     oled: &mut dyn hardware::OledBackend,
     rotation: &mut Rotation,
     shown: &mut Option<Screen>,
     cpu_usage: &mut sysinfo::CpuUsage,
     unit: TempUnit,
+    screen_tx: &tokio::sync::watch::Sender<Option<Screen>>,
 ) {
     rotation.tick(Instant::now());
     let current = rotation.current();
 
+    let selection_changed = current != *shown;
     // The clock screen needs to redraw every tick even though the
     // *selected* screen hasn't changed, so its displayed time doesn't go
     // stale — everything else only redraws when the rotation advances.
-    let needs_redraw = current != *shown || current == Some(Screen::Clock);
+    let needs_redraw = selection_changed || current == Some(Screen::Clock);
     *shown = current;
+    if selection_changed {
+        screen_tx.send_replace(current);
+    }
     if !needs_redraw {
         return;
     }
@@ -241,7 +271,10 @@ fn render_oled_tick(
     }
 }
 
-fn build_oled_data(cpu_usage: &mut sysinfo::CpuUsage, unit: TempUnit) -> OledData {
+/// `pub(crate)` so the web layer's live-preview endpoint (`src/web/oled.rs`,
+/// v0.5.0) can gather the same data a real render tick would, for a second
+/// render pass into an in-memory framebuffer instead of the physical panel.
+pub(crate) fn build_oled_data(cpu_usage: &mut sysinfo::CpuUsage, unit: TempUnit) -> OledData {
     let disks = sysinfo::read_disk_usage()
         .into_iter()
         .map(|d| (d.mount, d.used_pct))
@@ -598,6 +631,7 @@ mod tests {
         );
         let mut shown = None;
         let mut cpu = sysinfo::CpuUsage::new();
+        let (screen_tx, mut screen_rx) = tokio::sync::watch::channel(None::<Screen>);
 
         render_oled_tick(
             &mut oled,
@@ -605,6 +639,7 @@ mod tests {
             &mut shown,
             &mut cpu,
             TempUnit::Celsius,
+            &screen_tx,
         );
         render_oled_tick(
             &mut oled,
@@ -612,9 +647,15 @@ mod tests {
             &mut shown,
             &mut cpu,
             TempUnit::Celsius,
+            &screen_tx,
         );
 
         assert_eq!(*oled.0.lock().unwrap(), 1);
+        // Published once, on the first tick's selection (None -> Some(Ip)),
+        // not again on the second, unchanged-selection tick.
+        assert!(screen_rx.has_changed().unwrap());
+        assert_eq!(*screen_rx.borrow_and_update(), Some(Screen::Ip));
+        assert!(!screen_rx.has_changed().unwrap());
     }
 
     // Reboot/Shutdown aren't exercised here: handle_button_event hardcodes

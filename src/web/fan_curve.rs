@@ -75,6 +75,7 @@ pub async fn page(auth_session: AuthSession, State(state): State<AppState>) -> R
             can_edit => user.role() >= Role::Operator,
             cpu_points => to_dto_ascending("cpu", &cpu).points,
             hdd_points => to_dto_ascending("hdd", &hdd).points,
+            is_eon => state.board == crate::hardware::board::Board::Eon,
         },
     );
     html.into_response()

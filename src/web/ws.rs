@@ -15,9 +15,32 @@ pub async fn handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> imp
 async fn stream(mut socket: WebSocket, state: AppState) {
     let mut cpu = crate::sysinfo::CpuUsage::new();
     let mut interval = tokio::time::interval(super::WS_TICK_INTERVAL);
+    let mut oled_screen_rx = state.oled_screen.clone();
+
+    // Send the currently-selected screen right away (v0.5.0's live OLED
+    // preview, W§2.5) rather than making a freshly-connected client wait
+    // for the next rotation to learn what's already showing.
+    {
+        let screen = *oled_screen_rx.borrow_and_update();
+        let oled_screen = json!({ "type": "oled_screen", "name": screen.map(|s| s.name()) });
+        if socket
+            .send(Message::Text(oled_screen.to_string().into()))
+            .await
+            .is_err()
+        {
+            return;
+        }
+    }
 
     loop {
         tokio::select! {
+            Ok(()) = oled_screen_rx.changed() => {
+                let screen = *oled_screen_rx.borrow_and_update();
+                let oled_screen = json!({ "type": "oled_screen", "name": screen.map(|s| s.name()) });
+                if socket.send(Message::Text(oled_screen.to_string().into())).await.is_err() {
+                    return;
+                }
+            }
             _ = interval.tick() => {
                 let unit = match *state.units_tx.borrow() {
                     crate::config::TempUnit::Celsius => "C",

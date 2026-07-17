@@ -38,6 +38,8 @@ pub fn build_env() -> Environment<'static> {
         .expect("system.html is valid minijinja syntax");
     env.add_template("users.html", include_str!("../../templates/users.html"))
         .expect("users.html is valid minijinja syntax");
+    env.add_template("oled.html", include_str!("../../templates/oled.html"))
+        .expect("oled.html is valid minijinja syntax");
     env
 }
 

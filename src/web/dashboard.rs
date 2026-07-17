@@ -23,6 +23,7 @@ pub async fn show(auth_session: AuthSession, State(state): State<AppState>) -> R
             username => user.username,
             role => user.role().as_str(),
             active_page => "dashboard",
+            is_eon => state.board == crate::hardware::board::Board::Eon,
         },
     );
     html.into_response()

@@ -1,0 +1,238 @@
+{% extends "app_shell.html" %}
+{% block title %}Display — argonone{% endblock %}
+{% block main %}
+<style>
+.split{display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start;}
+@media (max-width:860px){.split{grid-template-columns:1fr;}}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px 22px;margin-bottom:16px;}
+.card-title{font-weight:600;font-size:14px;margin-bottom:14px;}
+.panel-mock{background:#05070a;border-radius:14px;padding:22px;border:6px solid #1a1d24;}
+.panel-mock canvas{width:100%;display:block;image-rendering:pixelated;}
+.panel-caption{text-align:center;font-family:var(--font-mono);font-size:11px;color:var(--muted);margin-top:12px;}
+.panel-caption b{color:var(--text);}
+.field{margin-bottom:16px;}
+.field:last-child{margin-bottom:0;}
+.field label{display:block;font-size:12.5px;font-weight:600;margin-bottom:7px;}
+.hintline{color:var(--muted);font-weight:400;font-size:11.5px;}
+input[type=range]{width:100%;accent-color:var(--accent);}
+.rangeval{font-family:var(--font-mono);font-size:12px;color:var(--muted);margin-top:4px;}
+.switch-row{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--border);}
+.switch-row:last-child{border-bottom:none;}
+.sw-label{font-size:13px;font-weight:500;}
+.sw-sub{font-size:11.5px;color:var(--muted);}
+.toggle{width:36px;height:20px;border-radius:10px;background:var(--good);position:relative;flex:none;cursor:pointer;transition:background-color .2s ease;}
+.toggle.off{background:var(--border);}
+.toggle i{position:absolute;top:2px;left:18px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .2s cubic-bezier(.34,1.56,.64,1);}
+.toggle.off i{left:2px;}
+.screenlist{display:flex;flex-direction:column;gap:8px;margin-top:6px;}
+.screen-row{display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:9px 12px;transition:opacity .15s ease,box-shadow .15s ease;}
+.screen-row.dragging{opacity:.5;}
+.screen-row.drag-over{box-shadow:0 0 0 2px var(--accent) inset;}
+.grip{color:var(--muted);font-family:var(--font-mono);letter-spacing:2px;cursor:grab;}
+.screen-name{flex:1;font-size:13px;font-weight:500;}
+.screen-order{font-family:var(--font-mono);font-size:11px;color:var(--muted);background:var(--panel);border:1px solid var(--border);border-radius:5px;padding:2px 7px;}
+.err{color:var(--crit);font-size:12.5px;margin-top:10px;}
+</style>
+<div class="page-head">
+  <h1>Display</h1>
+  <p class="lede">Argon EON's front panel — screen rotation, timing, and a live preview of what's on the physical display right now.</p>
+</div>
+
+<div class="split">
+  <div>
+    <div class="card">
+      <div class="card-title">Live preview</div>
+      <div class="panel-mock">
+        <canvas id="oledCanvas" width="128" height="64"></canvas>
+      </div>
+      <p class="panel-caption">Now showing <b id="nowScreen">—</b></p>
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card-title">Screen rotation</div>
+      <div class="screenlist" id="screenList"></div>
+      <div class="err" id="listErr"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Timing</div>
+      <div class="field">
+        <label>Switch duration <span class="hintline">— time on each screen before rotating</span></label>
+        <input type="range" min="0" max="60" value="{{ cfg.switch_duration_secs }}" id="durRange" {% if not can_edit %}disabled{% endif %}>
+        <div class="rangeval" id="durVal"></div>
+      </div>
+      <div class="field">
+        <label>Screensaver timeout <span class="hintline">— blank the panel after inactivity</span></label>
+        <input type="range" min="0" max="600" step="10" value="{{ cfg.screensaver_secs }}" id="saverRange" {% if not can_edit %}disabled{% endif %}>
+        <div class="rangeval" id="saverVal"></div>
+      </div>
+      <div class="switch-row">
+        <div><div class="sw-label">Panel enabled</div><div class="sw-sub">Turn the OLED off entirely</div></div>
+        <div class="toggle {% if not cfg.enabled %}off{% endif %}" id="enabledToggle"></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block page_script %}
+<script>
+const CAN_EDIT = {{ can_edit | tojson }};
+const ALL_SCREENS = [
+  ['clock', 'Clock'], ['ip', 'IP address'], ['cpu', 'CPU usage'], ['ram', 'RAM usage'],
+  ['storage', 'Storage'], ['temp', 'Temperature'], ['raid', 'RAID status'], ['splash', 'argonone logo'],
+];
+let cfg = {{ cfg | tojson }};
+
+function fmtSecs(s) { return s >= 60 ? `${Math.round(s / 60)} minute${s >= 120 ? 's' : ''}` : `${s} seconds`; }
+
+const durRange = document.getElementById('durRange'), durVal = document.getElementById('durVal');
+const saverRange = document.getElementById('saverRange'), saverVal = document.getElementById('saverVal');
+durVal.textContent = `${durRange.value} seconds`;
+saverVal.textContent = fmtSecs(+saverRange.value);
+durRange.addEventListener('input', () => durVal.textContent = `${durRange.value} seconds`);
+saverRange.addEventListener('input', () => saverVal.textContent = fmtSecs(+saverRange.value));
+
+async function saveConfig() {
+  const listErr = document.getElementById('listErr');
+  listErr.textContent = '';
+  const resp = await fetch('/api/oled/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(cfg),
+  });
+  if (!resp.ok) {
+    const data = await resp.json().catch(() => ({}));
+    listErr.textContent = data.error || `save failed (${resp.status})`;
+    return;
+  }
+  cfg = await resp.json();
+  showToast('Display settings saved');
+}
+
+function renderScreenList() {
+  const enabledKeys = cfg.screenlist.split(/\s+/).filter(Boolean);
+  const list = document.getElementById('screenList');
+  list.innerHTML = '';
+  // Enabled screens first, in configured order; disabled ones after, in ALL_SCREENS order.
+  const rows = [
+    ...enabledKeys.map(key => ALL_SCREENS.find(([k]) => k === key)).filter(Boolean),
+    ...ALL_SCREENS.filter(([k]) => !enabledKeys.includes(k)),
+  ];
+  rows.forEach(([key, label]) => {
+    const row = document.createElement('div');
+    row.className = 'screen-row';
+    row.draggable = CAN_EDIT;
+    row.dataset.key = key;
+    const order = enabledKeys.indexOf(key);
+    row.innerHTML = `<span class="grip">${CAN_EDIT ? '⋮⋮' : ''}</span><span class="screen-name">${label}</span>` +
+      `<span class="screen-order">${order >= 0 ? order + 1 : '—'}</span>` +
+      `<div class="toggle ${order >= 0 ? '' : 'off'}" data-key="${key}"></div>`;
+    list.appendChild(row);
+  });
+  if (CAN_EDIT) bindScreenListEvents();
+}
+
+function screenlistFromDom() {
+  return [...document.querySelectorAll('#screenList .screen-row')]
+    .filter(row => !row.querySelector('.toggle').classList.contains('off'))
+    .map(row => row.dataset.key)
+    .join(' ');
+}
+
+function bindScreenListEvents() {
+  const list = document.getElementById('screenList');
+  list.querySelectorAll('.toggle').forEach(t => {
+    t.addEventListener('click', () => {
+      t.classList.toggle('off');
+      cfg.screenlist = screenlistFromDom();
+      renderScreenList();
+      saveConfig();
+    });
+  });
+
+  let dragEl = null;
+  list.querySelectorAll('.screen-row').forEach(row => {
+    row.addEventListener('dragstart', () => { dragEl = row; row.classList.add('dragging'); });
+    row.addEventListener('dragend', () => {
+      row.classList.remove('dragging');
+      cfg.screenlist = screenlistFromDom();
+      renderScreenList();
+      saveConfig();
+    });
+    row.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (!dragEl) return;
+      const after = getAfterElement(list, e.clientY);
+      if (after == null) list.appendChild(dragEl); else list.insertBefore(dragEl, after);
+    });
+  });
+}
+
+function getAfterElement(container, y) {
+  const rows = [...container.querySelectorAll('.screen-row:not(.dragging)')];
+  return rows.reduce((closest, child) => {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    return (offset < 0 && offset > closest.offset) ? { offset, element: child } : closest;
+  }, { offset: -Infinity }).element;
+}
+
+renderScreenList();
+
+if (CAN_EDIT) {
+  durRange.addEventListener('change', () => {
+    cfg.switch_duration_secs = +durRange.value;
+    saveConfig();
+  });
+  saverRange.addEventListener('change', () => {
+    cfg.screensaver_secs = +saverRange.value;
+    saveConfig();
+  });
+  document.getElementById('enabledToggle').addEventListener('click', (e) => {
+    e.target.classList.toggle('off');
+    cfg.enabled = !e.target.classList.contains('off');
+    saveConfig();
+  });
+}
+
+// Live preview: unpack the packed-bit framebuffer onto a canvas, refetched
+// whenever the WS 'oled_screen' message says the selected screen changed
+// (server-rendered from the real draw_screen function, not simulated).
+const canvas = document.getElementById('oledCanvas');
+const ctx = canvas.getContext('2d');
+const nowScreenEl = document.getElementById('nowScreen');
+const SCREEN_LABELS = Object.fromEntries(ALL_SCREENS);
+
+function drawBits(bits) {
+  const img = ctx.createImageData(128, 64);
+  for (let i = 0; i < 128 * 64; i++) {
+    const on = bits ? ((bits[i >> 3] >> (7 - (i % 8))) & 1) === 1 : false;
+    const o = i * 4;
+    if (on) { img.data[o] = 143; img.data[o + 1] = 211; img.data[o + 2] = 255; img.data[o + 3] = 255; }
+    else { img.data[o] = 5; img.data[o + 1] = 7; img.data[o + 2] = 10; img.data[o + 3] = 255; }
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+async function refreshPreview() {
+  const resp = await fetch('/api/oled/preview');
+  if (!resp.ok) return;
+  const data = await resp.json();
+  drawBits(data.bits);
+  nowScreenEl.textContent = data.screen ? (SCREEN_LABELS[data.screen] || data.screen) : 'nothing (blanked)';
+}
+
+document.body.addEventListener('htmx:wsAfterMessage', function (evt) {
+  let data;
+  try { data = JSON.parse(evt.detail.message); } catch (e) { return; }
+  if (data.type === 'oled_screen') refreshPreview();
+});
+
+refreshPreview();
+// Fallback poll in case the WS connection drops — the preview should
+// never go stale forever just because a reconnect is pending.
+setInterval(refreshPreview, 5000);
+</script>
+{% endblock %}

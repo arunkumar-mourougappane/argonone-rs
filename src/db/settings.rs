@@ -5,7 +5,7 @@
 //! each growing a dedicated table.
 
 use super::DbPool;
-use crate::config::{ConfigPaths, RtcSchedule, TempUnit};
+use crate::config::{ConfigPaths, OledConfig, RtcSchedule, TempUnit};
 use std::path::Path;
 
 pub async fn load_units(pool: &DbPool) -> TempUnit {
@@ -62,6 +62,39 @@ pub async fn save_rtc_schedule(
     let value = serde_json::to_string(schedule).expect("RtcSchedule always serializes");
     sqlx::query(
         "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('rtc_schedule', ?1, datetime('now'), ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+    )
+    .bind(value)
+    .bind(updated_by)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Falls back to `/etc/argoneonoled.conf` (via [`OledConfig::load_or_default`])
+/// when nothing's been saved to the DB yet, same relationship as the RTC
+/// schedule/fan curves have to their old config files.
+pub async fn load_oled_config(pool: &DbPool) -> OledConfig {
+    let value: Option<String> =
+        sqlx::query_scalar("SELECT value FROM settings WHERE key = 'oled_config'")
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+    match value.and_then(|json| serde_json::from_str(&json).ok()) {
+        Some(cfg) => cfg,
+        None => OledConfig::load_or_default(Path::new(ConfigPaths::OLED)),
+    }
+}
+
+pub async fn save_oled_config(
+    pool: &DbPool,
+    cfg: &OledConfig,
+    updated_by: i64,
+) -> Result<(), sqlx::Error> {
+    let value = serde_json::to_string(cfg).expect("OledConfig always serializes");
+    sqlx::query(
+        "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('oled_config', ?1, datetime('now'), ?2)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
     )
     .bind(value)
@@ -139,5 +172,27 @@ mod tests {
         };
         save_rtc_schedule(&pool, &schedule, user_id).await.unwrap();
         assert_eq!(load_rtc_schedule(&pool).await, schedule);
+    }
+
+    #[tokio::test]
+    async fn load_oled_config_falls_back_to_default_when_unset_and_no_config_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = crate::db::connect(&dir.path().join("t.db")).await.unwrap();
+        assert_eq!(load_oled_config(&pool).await, OledConfig::default_config());
+    }
+
+    #[tokio::test]
+    async fn save_then_load_oled_config_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = crate::db::connect(&dir.path().join("t.db")).await.unwrap();
+        let user_id = seed_user(&pool).await;
+        let cfg = OledConfig {
+            switch_duration_secs: 15,
+            screensaver_secs: 300,
+            screenlist: "clock cpu raid".to_string(),
+            enabled: false,
+        };
+        save_oled_config(&pool, &cfg, user_id).await.unwrap();
+        assert_eq!(load_oled_config(&pool).await, cfg);
     }
 }

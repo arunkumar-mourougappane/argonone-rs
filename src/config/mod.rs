@@ -186,7 +186,7 @@ impl TempUnit {
 /// `/etc/argoneonoled.conf`: EON screen-rotation settings (W§1.3, §1.2).
 /// `screenlist` values in the wild are double-quoted
 /// (`screenlist="clock ip cpu storage temp"`); quotes are stripped on read.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OledConfig {
     pub switch_duration_secs: u32,
     /// Screensaver blank-after-idle, in seconds. `0` means disabled,

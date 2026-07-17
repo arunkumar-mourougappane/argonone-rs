@@ -14,6 +14,7 @@
 // `hardware::oled::I2cOled`, which is Linux-only — on a non-Linux dev
 // build there's no reachable caller for any of it outside `#[cfg(test)]`,
 // which is a real (platform-specific) dead-code fact rather than a bug.
+pub mod framebuffer;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub mod render;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -59,6 +60,22 @@ impl Screen {
             .split_whitespace()
             .filter_map(Screen::from_token)
             .collect()
+    }
+
+    /// The lowercase token form (inverse of [`Screen::from_token`]) —
+    /// used in the live-preview WS message (`{"type":"oled_screen","name":
+    /// "clock"}`, W§2.5) and the `screenlist` config value.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Screen::Clock => "clock",
+            Screen::Ip => "ip",
+            Screen::Cpu => "cpu",
+            Screen::Ram => "ram",
+            Screen::Storage => "storage",
+            Screen::Temp => "temp",
+            Screen::Raid => "raid",
+            Screen::Splash => "splash",
+        }
     }
 }
 

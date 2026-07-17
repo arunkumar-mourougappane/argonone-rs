@@ -152,6 +152,7 @@ pub async fn page(auth_session: AuthSession, State(state): State<AppState>) -> R
             active_page => "storage",
             disks => disks,
             raid_arrays => raid_rows,
+            is_eon => state.board == crate::hardware::board::Board::Eon,
         },
     );
     html.into_response()
