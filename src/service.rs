@@ -303,6 +303,15 @@ pub(crate) fn build_oled_data(cpu_usage: &mut sysinfo::CpuUsage, unit: TempUnit)
 /// wake comes next, not stuck on whatever was configured at boot.
 fn apply_rtc_wake_alarm(rtc: &mut dyn hardware::RtcBackend, schedule: &RtcSchedule) {
     if !schedule.enabled {
+        // A previously-armed alarm is independent hardware state that
+        // survives both this function returning early and a full power
+        // cycle — disabling the schedule (or deleting its last Wake
+        // entry) must actively clear it, not just stop re-arming it,
+        // or the Pi keeps waking at the old time regardless of what the
+        // UI/DB say.
+        if let Err(e) = rtc.clear_alarm() {
+            tracing::debug!(error = %e, "no RTC alarm to clear (or RTC unavailable)");
+        }
         return;
     }
     let now = match rtc.read_time() {
@@ -314,7 +323,10 @@ fn apply_rtc_wake_alarm(rtc: &mut dyn hardware::RtcBackend, schedule: &RtcSchedu
     };
     let Some((weekday, hour, minute)) = crate::rtc_schedule::next_wake(&schedule.entries, now)
     else {
-        tracing::debug!("no wake entries configured, nothing to arm");
+        tracing::debug!("no wake entries configured, clearing any stale alarm");
+        if let Err(e) = rtc.clear_alarm() {
+            tracing::debug!(error = %e, "no RTC alarm to clear (or RTC unavailable)");
+        }
         return;
     };
     // Clear any stale alarm flag left over from a previous fire before
@@ -578,7 +590,36 @@ async fn shutdown_signal() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hardware::{FanCapability, HwResult};
+    use crate::hardware::{FanCapability, HwResult, RtcDateTime};
+
+    #[derive(Default)]
+    struct RecordingRtc {
+        calls: std::sync::Mutex<Vec<String>>,
+    }
+    impl hardware::RtcBackend for RecordingRtc {
+        fn read_time(&mut self) -> HwResult<RtcDateTime> {
+            Ok(RtcDateTime {
+                year: 2026,
+                month: 1,
+                day: 1,
+                weekday: 4,
+                hour: 12,
+                minute: 0,
+                second: 0,
+            })
+        }
+        fn set_wake_alarm(&mut self, hour: u8, minute: u8, weekday: Option<u8>) -> HwResult<()> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(format!("set_wake_alarm({hour},{minute},{weekday:?})"));
+            Ok(())
+        }
+        fn clear_alarm(&mut self) -> HwResult<()> {
+            self.calls.lock().unwrap().push("clear_alarm".to_string());
+            Ok(())
+        }
+    }
 
     struct RecordingFan(std::sync::Mutex<Vec<&'static str>>);
     impl hardware::FanBackend for RecordingFan {
@@ -677,5 +718,65 @@ mod tests {
     #[test]
     fn spawn_system_command_missing_binary_does_not_panic() {
         spawn_system_command("argonone-rs-definitely-not-a-real-binary", &[]);
+    }
+
+    #[test]
+    fn disabling_schedule_clears_a_stale_wake_alarm() {
+        let mut rtc = RecordingRtc::default();
+        let schedule = RtcSchedule {
+            enabled: false,
+            entries: vec![RtcScheduleEntry {
+                kind: crate::config::RtcEventKind::Wake,
+                days: 0x7f,
+                hour: 7,
+                minute: 0,
+            }],
+        };
+        apply_rtc_wake_alarm(&mut rtc, &schedule);
+        let calls = rtc.calls.lock().unwrap();
+        assert_eq!(*calls, vec!["clear_alarm".to_string()]);
+    }
+
+    #[test]
+    fn enabled_schedule_with_no_wake_entries_clears_stale_alarm() {
+        let mut rtc = RecordingRtc::default();
+        let schedule = RtcSchedule {
+            enabled: true,
+            entries: vec![RtcScheduleEntry {
+                kind: crate::config::RtcEventKind::Sleep,
+                days: 0x7f,
+                hour: 23,
+                minute: 0,
+            }],
+        };
+        apply_rtc_wake_alarm(&mut rtc, &schedule);
+        let calls = rtc.calls.lock().unwrap();
+        assert_eq!(*calls, vec!["clear_alarm".to_string()]);
+    }
+
+    #[test]
+    fn enabled_schedule_with_wake_entry_arms_the_alarm() {
+        let mut rtc = RecordingRtc::default();
+        let schedule = RtcSchedule {
+            enabled: true,
+            entries: vec![RtcScheduleEntry {
+                kind: crate::config::RtcEventKind::Wake,
+                days: 0x7f,
+                hour: 7,
+                minute: 30,
+            }],
+        };
+        apply_rtc_wake_alarm(&mut rtc, &schedule);
+        let calls = rtc.calls.lock().unwrap();
+        // now is weekday 4 at 12:00, past today's 07:30 — wraps to the
+        // soonest still-matching day, weekday 5 (matches
+        // rtc_schedule::next_wake's own wrap-forward tests).
+        assert_eq!(
+            *calls,
+            vec![
+                "clear_alarm".to_string(),
+                "set_wake_alarm(7,30,Some(5))".to_string(),
+            ]
+        );
     }
 }

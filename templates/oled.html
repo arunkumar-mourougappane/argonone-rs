@@ -94,21 +94,48 @@ saverVal.textContent = fmtSecs(+saverRange.value);
 durRange.addEventListener('input', () => durVal.textContent = `${durRange.value} seconds`);
 saverRange.addEventListener('input', () => saverVal.textContent = fmtSecs(+saverRange.value));
 
-async function saveConfig() {
+function snapshotCfg() { return JSON.parse(JSON.stringify(cfg)); }
+
+// Every control below mutates `cfg`/the DOM optimistically before this
+// runs, so a failed save needs to actually undo that — not just report
+// an error while leaving the toggle/slider/list showing the rejected
+// change as if it had taken effect. `previous` is the pre-mutation
+// snapshot to restore.
+async function saveConfig(previous) {
   const listErr = document.getElementById('listErr');
   listErr.textContent = '';
-  const resp = await fetch('/api/oled/config', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(cfg),
-  });
+  let resp;
+  try {
+    resp = await fetch('/api/oled/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cfg),
+    });
+  } catch (e) {
+    listErr.textContent = 'Network error — check your connection and try again';
+    cfg = previous;
+    applyCfgToControls();
+    return;
+  }
   if (!resp.ok) {
     const data = await resp.json().catch(() => ({}));
     listErr.textContent = data.error || `save failed (${resp.status})`;
+    cfg = previous;
+    applyCfgToControls();
     return;
   }
   cfg = await resp.json();
+  applyCfgToControls();
   showToast('Display settings saved');
+}
+
+function applyCfgToControls() {
+  durRange.value = cfg.switch_duration_secs;
+  durVal.textContent = `${durRange.value} seconds`;
+  saverRange.value = cfg.screensaver_secs;
+  saverVal.textContent = fmtSecs(+saverRange.value);
+  document.getElementById('enabledToggle').classList.toggle('off', !cfg.enabled);
+  renderScreenList();
 }
 
 function renderScreenList() {
@@ -145,10 +172,11 @@ function bindScreenListEvents() {
   const list = document.getElementById('screenList');
   list.querySelectorAll('.toggle').forEach(t => {
     t.addEventListener('click', () => {
+      const previous = snapshotCfg();
       t.classList.toggle('off');
       cfg.screenlist = screenlistFromDom();
       renderScreenList();
-      saveConfig();
+      saveConfig(previous);
     });
   });
 
@@ -157,9 +185,10 @@ function bindScreenListEvents() {
     row.addEventListener('dragstart', () => { dragEl = row; row.classList.add('dragging'); });
     row.addEventListener('dragend', () => {
       row.classList.remove('dragging');
+      const previous = snapshotCfg();
       cfg.screenlist = screenlistFromDom();
       renderScreenList();
-      saveConfig();
+      saveConfig(previous);
     });
     row.addEventListener('dragover', (e) => {
       e.preventDefault();
@@ -183,17 +212,20 @@ renderScreenList();
 
 if (CAN_EDIT) {
   durRange.addEventListener('change', () => {
+    const previous = snapshotCfg();
     cfg.switch_duration_secs = +durRange.value;
-    saveConfig();
+    saveConfig(previous);
   });
   saverRange.addEventListener('change', () => {
+    const previous = snapshotCfg();
     cfg.screensaver_secs = +saverRange.value;
-    saveConfig();
+    saveConfig(previous);
   });
   document.getElementById('enabledToggle').addEventListener('click', (e) => {
+    const previous = snapshotCfg();
     e.target.classList.toggle('off');
     cfg.enabled = !e.target.classList.contains('off');
-    saveConfig();
+    saveConfig(previous);
   });
 }
 

@@ -22,6 +22,7 @@ table.users tr:last-child td{border-bottom:none;}
 .badge.admin{background:var(--accent-soft);color:var(--accent);}
 .badge.operator{background:var(--good-soft);color:var(--good);}
 .badge.viewer{background:var(--bg);color:var(--muted);}
+.badge.locked{background:var(--crit-soft);color:var(--crit);}
 .role-select{padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:11.5px;}
 .actions a{color:var(--muted);text-decoration:none;font-size:12.5px;font-weight:600;margin-right:14px;cursor:pointer;}
 .actions a:hover{color:var(--accent);}
@@ -33,10 +34,22 @@ table.users tr:last-child td{border-bottom:none;}
 .field label{display:block;font-size:11.5px;font-weight:600;color:var(--muted);margin-bottom:6px;}
 .field input[type=text],.field select{width:100%;padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:12.5px;}
 .err{color:var(--crit);font-size:12.5px;margin-top:10px;min-height:16px;}
+.cred-reveal{display:none;background:var(--accent-soft);border:1px solid var(--accent);border-radius:10px;padding:14px 16px;margin-bottom:16px;font-size:13px;}
+.cred-reveal.show{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.cred-reveal code{font-family:var(--font-mono);background:var(--panel);padding:3px 9px;border-radius:6px;font-size:13px;}
+.cred-reveal button{background:none;border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-family:var(--font-ui);font-size:12px;font-weight:600;cursor:pointer;color:var(--text);}
 </style>
 <div class="page-head">
   <h1>Users</h1>
   <p class="lede">Who can sign in to this device, and what they're allowed to touch.</p>
+</div>
+
+<div class="cred-reveal" id="credReveal">
+  <span id="credText"></span>
+  <span>
+    <button type="button" id="credCopy">Copy password</button>
+    <button type="button" id="credDismiss">Dismiss</button>
+  </span>
 </div>
 
 <div class="legend">
@@ -73,7 +86,9 @@ table.users tr:last-child td{border-bottom:none;}
           </div>
         </td>
         <td>
-          {% if u.id == current_user_id %}
+          {% if u.is_locked %}
+          <span class="badge locked">Locked</span>
+          {% elif u.id == current_user_id %}
           <span class="badge {{ u.role }}">{{ u.role | capitalize }}</span>
           {% else %}
           <select class="role-select" data-id="{{ u.id }}">
@@ -86,6 +101,7 @@ table.users tr:last-child td{border-bottom:none;}
         <td class="small">{{ u.last_login_at if u.last_login_at is not none else "Never" }}</td>
         <td class="small">{{ u.created_at }}</td>
         <td class="actions">
+          {% if u.is_locked %}<a class="unlock-user" data-id="{{ u.id }}" data-user="{{ u.username }}">Unlock</a>{% endif %}
           <a class="reset-pw" data-id="{{ u.id }}" data-user="{{ u.username }}">Reset password</a>
           {% if u.id != current_user_id %}<a class="danger remove-user" data-id="{{ u.id }}" data-user="{{ u.username }}">Remove</a>{% endif %}
         </td>
@@ -114,6 +130,35 @@ table.users tr:last-child td{border-bottom:none;}
 <script>
 function roleLabel(role) { return role.charAt(0).toUpperCase() + role.slice(1); }
 
+// fetch() only rejects on a genuine network failure (dropped connection,
+// DNS, offline) — HTTP error statuses still resolve normally and are
+// handled by each call site's `!resp.ok` branch. Without this wrapper a
+// network failure left buttons inert with no feedback at all.
+async function safeFetch(url, opts) {
+  try {
+    return await fetch(url, opts);
+  } catch (e) {
+    showToast('Network error — check your connection and try again');
+    return null;
+  }
+}
+
+function showCredential(username, password) {
+  document.getElementById('credText').innerHTML =
+    `Temporary password for <b>@${username}</b>: <code>${password}</code> — they must change it at next login. This won't be shown again.`;
+  const reveal = document.getElementById('credReveal');
+  reveal.classList.add('show');
+  reveal.dataset.password = password;
+}
+document.getElementById('credCopy').addEventListener('click', () => {
+  const reveal = document.getElementById('credReveal');
+  navigator.clipboard?.writeText(reveal.dataset.password || '');
+  showToast('Copied to clipboard');
+});
+document.getElementById('credDismiss').addEventListener('click', () => {
+  document.getElementById('credReveal').classList.remove('show');
+});
+
 document.getElementById('createBtn').addEventListener('click', async () => {
   const errMsg = document.getElementById('errMsg');
   errMsg.textContent = '';
@@ -124,27 +169,44 @@ document.getElementById('createBtn').addEventListener('click', async () => {
 
   if (!username) { errMsg.textContent = 'Username is required'; return; }
 
-  const resp = await fetch('/api/users', {
+  const resp = await safeFetch('/api/users', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, first_name: first || null, last_name: last || null, role }),
   });
+  if (!resp) return;
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) {
     errMsg.textContent = data.error || `create failed (${resp.status})`;
     return;
   }
   const fullName = (first || last) ? `${first} ${last}`.trim() : username;
+  showCredential(username, data.temporary_password);
   showToast(`${fullName} added as ${roleLabel(role)}`);
-  setTimeout(() => window.location.reload(), 900);
+  setTimeout(() => window.location.reload(), 2600);
 });
 
 document.querySelectorAll('.reset-pw').forEach(a => {
   a.addEventListener('click', async () => {
     const id = a.getAttribute('data-id');
-    const resp = await fetch(`/api/users/${id}/reset-password`, { method: 'POST' });
+    const resp = await safeFetch(`/api/users/${id}/reset-password`, { method: 'POST' });
+    if (!resp) return;
     if (!resp.ok) { showToast(`Reset failed (${resp.status})`); return; }
+    const data = await resp.json().catch(() => ({}));
+    showCredential(a.getAttribute('data-user'), data.temporary_password);
     showToast(`Temporary password generated for ${a.getAttribute('data-user')} — they must change it at next login`);
+  });
+});
+
+document.querySelectorAll('.unlock-user').forEach(a => {
+  a.addEventListener('click', async () => {
+    const id = a.getAttribute('data-id');
+    const user = a.getAttribute('data-user');
+    const resp = await safeFetch(`/api/users/${id}/unlock`, { method: 'POST' });
+    if (!resp) return;
+    if (!resp.ok) { showToast(`Unlock failed (${resp.status})`); return; }
+    showToast(`${user} unlocked`);
+    setTimeout(() => window.location.reload(), 900);
   });
 });
 
@@ -153,7 +215,8 @@ document.querySelectorAll('.remove-user').forEach(a => {
     const id = a.getAttribute('data-id');
     const user = a.getAttribute('data-user');
     if (!window.confirm(`Remove ${user}? This can't be undone.`)) return;
-    const resp = await fetch(`/api/users/${id}`, { method: 'DELETE' });
+    const resp = await safeFetch(`/api/users/${id}`, { method: 'DELETE' });
+    if (!resp) return;
     if (!resp.ok) {
       const data = await resp.json().catch(() => ({}));
       showToast(data.error || `remove failed (${resp.status})`);
@@ -165,17 +228,20 @@ document.querySelectorAll('.remove-user').forEach(a => {
 });
 
 document.querySelectorAll('.role-select').forEach(sel => {
+  const previousValue = sel.value;
   sel.addEventListener('change', async () => {
     const id = sel.getAttribute('data-id');
     const role = sel.value;
-    const resp = await fetch(`/api/users/${id}/role`, {
+    const resp = await safeFetch(`/api/users/${id}/role`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ role }),
     });
+    if (!resp) { sel.value = previousValue; return; }
     if (!resp.ok) {
       const data = await resp.json().catch(() => ({}));
       showToast(data.error || `role change failed (${resp.status})`);
+      sel.value = previousValue;
       return;
     }
     showToast(`Role updated to ${roleLabel(role)}`);

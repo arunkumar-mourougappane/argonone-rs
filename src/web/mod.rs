@@ -122,6 +122,7 @@ pub async fn build_router(
             "/api/users/{id}/reset-password",
             post(users::reset_password),
         )
+        .route("/api/users/{id}/unlock", post(users::unlock))
         .route("/users", get(users::page))
         .route("/api/users", get(users::list).post(users::create))
         .route("/api/users/{id}", delete(users::delete))

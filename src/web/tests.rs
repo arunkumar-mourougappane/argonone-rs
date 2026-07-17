@@ -1230,3 +1230,98 @@ async fn oled_preview_renders_the_currently_selected_screen() {
         "clock screen should light at least one pixel"
     );
 }
+
+#[tokio::test]
+async fn locked_user_shows_locked_badge_and_admin_can_unlock() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "victim", "viewer").await;
+    let victim_id: i64 = sqlx::query_scalar("SELECT id FROM users WHERE username = 'victim'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE users SET failed_attempts = 5, locked_until = datetime('now', '+15 minutes') WHERE id = ?1",
+    )
+    .bind(victim_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let admin_cookie = {
+        let login = router
+            .clone()
+            .oneshot(form_request(
+                "POST",
+                "/login",
+                "username=admin&password=correcthorsebatterystaple",
+                None,
+            ))
+            .await
+            .unwrap();
+        extract_set_cookie(&login)
+    };
+    let _ = cookie;
+
+    let page = router
+        .clone()
+        .oneshot(empty_request("GET", "/users", &admin_cookie))
+        .await
+        .unwrap();
+    assert_eq!(page.status(), StatusCode::OK);
+    let body = page.into_body().collect().await.unwrap().to_bytes();
+    let html = String::from_utf8_lossy(&body);
+    assert!(
+        html.contains("badge locked"),
+        "locked user should show a Locked badge"
+    );
+    assert!(
+        html.contains("unlock-user"),
+        "locked user should show an Unlock action"
+    );
+
+    let unlock = router
+        .clone()
+        .oneshot(empty_request(
+            "POST",
+            &format!("/api/users/{victim_id}/unlock"),
+            &admin_cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(unlock.status(), StatusCode::NO_CONTENT);
+
+    let still_locked: i64 = sqlx::query_scalar(
+        "SELECT locked_until IS NOT NULL AND locked_until > datetime('now') FROM users WHERE id = ?1",
+    )
+    .bind(victim_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(still_locked, 0);
+}
+
+#[tokio::test]
+async fn non_admin_cannot_unlock_users() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "op1", "operator").await;
+
+    let resp = router
+        .clone()
+        .oneshot(empty_request("POST", "/api/users/1/unlock", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn unlock_on_missing_user_is_404() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "admin1", "admin").await;
+
+    let resp = router
+        .clone()
+        .oneshot(empty_request("POST", "/api/users/999/unlock", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}

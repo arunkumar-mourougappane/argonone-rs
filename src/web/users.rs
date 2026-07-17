@@ -6,6 +6,7 @@
 use super::AppState;
 use super::templates::render;
 use crate::auth::{AuthSession, Role, hash_password};
+use crate::db::users::GuardedOutcome;
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -183,35 +184,8 @@ pub async fn delete(
             .into_response();
     }
 
-    match crate::db::users::role_of(&state.pool, id).await {
-        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
-        Ok(Some(role)) if role == "admin" => {
-            match crate::db::users::count_admins(&state.pool).await {
-                Ok(n) if n <= 1 => {
-                    return (
-                        StatusCode::UNPROCESSABLE_ENTITY,
-                        Json(ErrorResponse {
-                            error: "cannot remove the last admin account".to_string(),
-                        }),
-                    )
-                        .into_response();
-                }
-                Ok(_) => {}
-                Err(e) => {
-                    tracing::error!(error = %e, "users.delete: admin-count check failed");
-                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-                }
-            }
-        }
-        Ok(Some(_)) => {}
-        Err(e) => {
-            tracing::error!(error = %e, "users.delete: role lookup failed");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    }
-
     match crate::db::users::delete_user(&state.pool, id).await {
-        Ok(true) => {
+        Ok(GuardedOutcome::Applied) => {
             audit(
                 &state.pool,
                 actor.id,
@@ -221,7 +195,14 @@ pub async fn delete(
             .await;
             StatusCode::NO_CONTENT.into_response()
         }
-        Ok(false) => StatusCode::NOT_FOUND.into_response(),
+        Ok(GuardedOutcome::NotFound) => StatusCode::NOT_FOUND.into_response(),
+        Ok(GuardedOutcome::LastAdmin) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(ErrorResponse {
+                error: "cannot remove the last admin account".to_string(),
+            }),
+        )
+            .into_response(),
         Err(e) => {
             tracing::error!(error = %e, "users.delete: db delete failed");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -261,35 +242,8 @@ pub async fn update_role(
             .into_response();
     }
 
-    match crate::db::users::role_of(&state.pool, id).await {
-        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
-        Ok(Some(current)) if current == "admin" && body.role != "admin" => {
-            match crate::db::users::count_admins(&state.pool).await {
-                Ok(n) if n <= 1 => {
-                    return (
-                        StatusCode::UNPROCESSABLE_ENTITY,
-                        Json(ErrorResponse {
-                            error: "cannot demote the last admin account".to_string(),
-                        }),
-                    )
-                        .into_response();
-                }
-                Ok(_) => {}
-                Err(e) => {
-                    tracing::error!(error = %e, "users.update_role: admin-count check failed");
-                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-                }
-            }
-        }
-        Ok(Some(_)) => {}
-        Err(e) => {
-            tracing::error!(error = %e, "users.update_role: role lookup failed");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    }
-
     match crate::db::users::update_role(&state.pool, id, &body.role).await {
-        Ok(true) => {
+        Ok(GuardedOutcome::Applied) => {
             audit(
                 &state.pool,
                 actor.id,
@@ -302,7 +256,14 @@ pub async fn update_role(
             })
             .into_response()
         }
-        Ok(false) => StatusCode::NOT_FOUND.into_response(),
+        Ok(GuardedOutcome::NotFound) => StatusCode::NOT_FOUND.into_response(),
+        Ok(GuardedOutcome::LastAdmin) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(ErrorResponse {
+                error: "cannot demote the last admin account".to_string(),
+            }),
+        )
+            .into_response(),
         Err(e) => {
             tracing::error!(error = %e, "users.update_role: db update failed");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -358,6 +319,41 @@ pub async fn reset_password(
         }
         Err(e) => {
             tracing::error!(error = %e, "reset-password: db update failed");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+/// Clears a failed-login lockout without rotating the password — a
+/// lighter-weight alternative to `reset_password` for when an account
+/// just needs unsticking (mirrors `07-users-rbac.html`'s "Unlock" action
+/// on locked rows).
+pub async fn unlock(
+    auth_session: AuthSession,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Response {
+    let Some(actor) = &auth_session.user else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    if actor.role() < Role::Admin {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
+    match crate::db::users::unlock_user(&state.pool, id).await {
+        Ok(true) => {
+            audit(
+                &state.pool,
+                actor.id,
+                "user.unlock",
+                format!("{{\"target_user_id\":{id}}}"),
+            )
+            .await;
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Ok(false) => StatusCode::NOT_FOUND.into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "users.unlock: db update failed");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
