@@ -11,7 +11,7 @@ A Rust daemon, CLI, and web UI for Argon ONE/EON Raspberry Pi cases — I2C fan 
 
 ## Status
 
-Latest tagged release: **v0.4.0** (fan curve editor, Storage & RAID, System pages), verified on real hardware including actual disks and a RAID array. **v0.5.0** (Users admin, Power & RTC schedule, OLED config + live preview) is implemented and route-tested but not yet verified on real EON hardware or tagged. Every hardware access goes through a `HardwareBackend` trait with a no-op fallback, so the daemon runs (and is testable) without the case attached.
+Latest tagged release: **v0.5.0** (Users admin, Power & RTC schedule, OLED config + live preview) — route-tested (170 automated tests, manual smoke-testing against both `Board::NoCase` and `Board::Eon` on a non-Pi dev machine) but **not yet verified on real Argon EON hardware**; the RTC wake/sleep scheduling and OLED live preview haven't run against a real PCF8563/SSD1306 yet. **v0.4.0** (fan curve editor, Storage & RAID, System pages) remains the most recent release verified end-to-end on real hardware, including actual disks and a RAID array. Every hardware access goes through a `HardwareBackend` trait with a no-op fallback, so the daemon runs (and is testable) without the case attached.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full v0.1.0 → v0.7.0 milestone plan (each item annotated `Done`/`Not yet done` against the code) and [CHANGELOG.md](CHANGELOG.md) for the dated, cumulative record of what's landed.
 

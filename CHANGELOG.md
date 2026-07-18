@@ -6,6 +6,8 @@ This file is the permanent, cumulative log across every version. For the prose w
 
 ## [Unreleased]
 
+## [v0.5.0] - 2026-07-17
+
 ### Added
 
 - Users admin page (v0.5.0, mirrors `07-users-rbac.html`): full CRUD — `GET/POST /api/users`, `DELETE /api/users/{id}`, `PUT /api/users/{id}/role`, all admin-only — plus the `/users` page itself. Refuses to delete or demote the last remaining admin, and refuses self-delete, so user management can't lock itself out. New `src/db/users.rs` mirrors `db/settings.rs`'s query-style conventions; no migration needed, the `users` table already had `first_name`/`last_name`/`created_at`/`last_login_at` sitting unused by the auth-hot-path `User` struct.
@@ -17,6 +19,15 @@ This file is the permanent, cumulative log across every version. For the prose w
 ### Fixed
 
 - `audit_log` gap: `settings.update_units` never wrote an audit entry despite `fan_curve.update`/`user.reset_password` already doing so. Closed alongside the new user-management actions, which all audit-log consistently now.
+- Users: a newly-created account's temporary password was generated server-side but never shown to the admin — the response was discarded after checking `resp.ok`, same gap in the reset-password handler. Both now surface it in a persistent, dismissible "cred-reveal" panel with a copy button.
+- RTC: disabling the schedule (or deleting its last Wake entry) never called `clear_alarm()` — the physical PCF8563 alarm stayed armed regardless of what the UI/DB said. `apply_rtc_wake_alarm` now clears the alarm on both the disabled and no-wake-entries paths.
+- OLED: every control (screen toggle, drag-reorder, sliders, panel-enable) mutated the UI optimistically before saving, but a failed `PUT` never rolled any of it back. `saveConfig()` now takes a pre-mutation snapshot and restores it (DOM included) on failure.
+- Users: `delete`/`update_role`'s last-admin guard was a separate check-then-act (a count query, then the write) — a TOCTOU race under concurrent requests. Now a single atomic SQL statement, the `COUNT(*)` guard folded into the same `DELETE`/`UPDATE`.
+- Users: no "Locked" badge or "Unlock" action existed despite the mockup designing for it. Added `UserRow.is_locked`, a Locked badge, `POST /api/users/{id}/unlock`, and network-error (not just HTTP-error) handling on every `fetch()` in `users.html`.
+- CSS: `base.html`'s `.card{max-width:440px}` (meant only for the centered login/setup/change-password cards) leaked into every page reusing the `.card` class — `users.html` and `oled.html` never set their own `max-width` (unlike `fan_curve.html`/`system.html`/`storage.html`, which happened to), so the Users table and every Display-page card rendered squeezed into a fraction of the available width. Scoped to `.center-page`.
+- CSS: the Users page's "Create" button had a stray `margin-top` (meant for stacked form-submit buttons elsewhere) misaligning it from the input row it shares.
+- Dashboard status strip had drifted from its mockup since v0.3.0's bare shell: flat text instead of the stacked label/value/severity-dot layout, a CPU% stat the mockup doesn't show, and no IP address or Uptime. Restyled to match, added `sysinfo::read_uptime_secs`/`read_local_ip` reaching the web layer, dropped CPU%.
+- Sidebar brand block never rendered the hostname despite the mockup showing it under "argonone" (e.g. `rpi01.lan`) — added `sysinfo::read_hostname`, sent once over `/api/ws` on connect.
 
 ## [v0.4.0] - 2026-07-16
 
