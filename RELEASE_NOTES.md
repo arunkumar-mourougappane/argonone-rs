@@ -28,9 +28,13 @@ v0.5.0 is **EON web screens + Users/RBAC admin** — it completes web-UI parity 
 - Fan curves, temperature units, RTC schedule, and OLED config are all DB-backed with live-apply — editing any of them takes effect on the running daemon immediately, no restart.
 - Dashboard status strip and sidebar now match their mockups: severity-colored CPU-temp dot, IP address, uptime, and the device hostname under the "argonone" brand mark — none of which were wired up before this release.
 
+## Verified on Hardware
+
+Deployed and manually tested on a real Argon ONE case (Ubuntu 26.04 on a Pi, real systemd unit, real network access): board auto-detection correctly identified `Board::One`, the fan curve editor's live response on the actual fan, and the Users admin page end-to-end (login, create/delete users, role changes, password reset, and lockout/unlock) all confirmed working.
+
 ## Known Limitations
 
-- **Not yet verified on real Argon EON hardware.** Every feature in this release is covered by 170 automated tests (including EON-board-gated routes, exercised via a `Board::Eon` test fixture — never a live server) and manual smoke-testing against a locally-running server, but that live testing only ever ran as `Board::NoCase`: this dev machine is non-Linux, and `hardware::detect` has no override to force `Board::Eon` at runtime off real hardware. Neither the RTC wake/sleep scheduling nor the OLED live preview has ever driven an actual PCF8563 or SSD1306. This is the same bar v0.1.0–v0.4.0 were held to before tagging, and it hasn't been met yet for v0.5.0. Treat this release as functionally complete but hardware-unverified until that pass happens.
+- **RTC wake/sleep scheduling and OLED live preview are still unverified on real hardware.** Both are gated to `Board::Eon` (`state.board != Board::Eon` in `src/web/rtc.rs`/`src/web/oled.rs` — every RTC/OLED endpoint 404s otherwise), and an Argon ONE has neither the PCF8563 RTC nor the SSD1306 OLED physically present, so this pass couldn't reach them. 170 automated tests cover their code paths via a `Board::Eon` test fixture, but neither has ever driven the actual chips. Needs an Argon EON case for a full pass — this is the one real gap left before v0.5.0 fully meets the on-hardware bar v0.1.0–v0.4.0 were held to.
 
 ## Deploying
 
