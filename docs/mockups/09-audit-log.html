@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Audit log — argonone</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+:root{
+  --bg:#F4F5F9; --panel:#FFFFFF; --panel-2:#F8F8FC; --border:#DFE1EA; --text:#1B1E27; --muted:#5B6172;
+  --accent:#6857E8; --accent-soft:#EDEAFB;
+  --good:#2E9C63; --good-soft:#E4F6EC; --warn:#B5791C; --warn-soft:#FBF0DC; --crit:#C43450; --crit-soft:#FBE4E9;
+  --shadow:0 1px 2px rgba(20,22,30,.06), 0 8px 24px rgba(20,22,30,.05);
+  --font-ui:'IBM Plex Sans',-apple-system,"Segoe UI",sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){ :root{ --bg:#0C0E13; --panel:#14171F; --panel-2:#181C25; --border:#262B36; --text:#E7E9F0; --muted:#8A90A3;
+  --accent:#8B7FFF; --accent-soft:rgba(139,127,255,.14); --good:#4FBE86; --good-soft:rgba(79,190,134,.14);
+  --warn:#E3A83F; --warn-soft:rgba(227,168,63,.14); --crit:#E5677A; --crit-soft:rgba(229,103,122,.14);
+  --shadow:0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.4); } }
+:root[data-theme="dark"]{ --bg:#0C0E13; --panel:#14171F; --panel-2:#181C25; --border:#262B36; --text:#E7E9F0; --muted:#8A90A3;
+  --accent:#8B7FFF; --accent-soft:rgba(139,127,255,.14); --good:#4FBE86; --good-soft:rgba(79,190,134,.14);
+  --warn:#E3A83F; --warn-soft:rgba(227,168,63,.14); --crit:#E5677A; --crit-soft:rgba(229,103,122,.14);
+  --shadow:0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.4); }
+:root[data-theme="light"]{ --bg:#F4F5F9; --panel:#FFFFFF; --panel-2:#F8F8FC; --border:#DFE1EA; --text:#1B1E27; --muted:#5B6172;
+  --accent:#6857E8; --accent-soft:#EDEAFB; --good:#2E9C63; --good-soft:#E4F6EC; --warn:#B5791C; --warn-soft:#FBF0DC;
+  --crit:#C43450; --crit-soft:#FBE4E9; --shadow:0 1px 2px rgba(20,22,30,.06), 0 8px 24px rgba(20,22,30,.05); }
+
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size:14px;}
+a{color:inherit;}
+.shell{display:flex;min-height:100vh;}
+.sidebar{width:216px;flex:none;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:18px 12px;position:sticky;top:0;height:100vh;}
+.brand{display:flex;align-items:center;gap:9px;padding:6px 8px 18px;border-bottom:1px solid var(--border);margin-bottom:10px;}
+.brand-mark{width:26px;height:26px;border-radius:7px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font-mono);font-weight:600;font-size:12px;flex:none;}
+.brand-name{font-weight:600;font-size:14px;}
+.brand-host{font-family:var(--font-mono);font-size:10.5px;color:var(--muted);}
+.navlist{list-style:none;padding:0;margin:6px 0 0;display:flex;flex-direction:column;gap:1px;}
+.navlist a{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;color:var(--muted);text-decoration:none;font-size:13px;font-weight:500;}
+.navlist a:hover{background:var(--panel-2);color:var(--text);}
+.navlist a.active{background:var(--accent-soft);color:var(--accent);}
+.navlist svg{width:16px;height:16px;flex:none;}
+.navlist .divider{height:1px;background:var(--border);margin:10px 4px;}
+.sidebar-foot{margin-top:auto;padding-top:12px;border-top:1px solid var(--border);display:flex;align-items:center;gap:9px;}
+.avatar{width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:11px;font-weight:600;flex:none;}
+.user-name{font-size:12.5px;font-weight:600;line-height:1.3;}
+.user-role{font-family:var(--font-mono);font-size:10px;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;}
+.main{flex:1;min-width:0;}
+.statusbar{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--border);background:var(--panel);}
+.stat{padding:13px 22px;border-right:1px solid var(--border);}
+.stat-label{font-family:var(--font-mono);font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px;}
+.stat-value{font-family:var(--font-mono);font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;display:flex;align-items:baseline;gap:5px;}
+.stat-value .unit{font-size:12px;color:var(--muted);font-weight:500;}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:6px;}
+.dot.good{background:var(--good);}
+.content{padding:26px 26px 64px;max-width:1160px;}
+.page-head{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:20px;}
+.page-head h1{font-size:20px;margin:0 0 4px;font-weight:700;}
+.page-sub{color:var(--muted);font-size:13px;margin:0;}
+
+.filters{display:flex;gap:10px;margin-bottom:16px;}
+.filters select{padding:8px 11px;border-radius:8px;border:1px solid var(--border);background:var(--panel);color:var(--text);font-family:var(--font-mono);font-size:12.5px;}
+.filters select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:6px 0;}
+table.audit{width:100%;border-collapse:collapse;}
+table.audit th{text-align:left;font-family:var(--font-mono);font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600;padding:12px 20px 10px;border-bottom:1px solid var(--border);}
+table.audit td{padding:12px 20px;border-bottom:1px solid var(--border);vertical-align:middle;}
+table.audit tr:last-child td{border-bottom:none;}
+table.audit tbody tr:hover{background:var(--panel-2);}
+.when{font-family:var(--font-mono);font-size:12px;color:var(--muted);white-space:nowrap;}
+.actor{display:flex;align-items:center;gap:8px;}
+.actor .avatar{width:22px;height:22px;font-size:9.5px;}
+.actor-name{font-weight:600;font-size:12.5px;}
+.action-badge{font-family:var(--font-mono);font-size:11px;padding:3px 9px;border-radius:6px;background:var(--panel-2);color:var(--text);white-space:nowrap;}
+.action-badge.user{background:var(--accent-soft);color:var(--accent);}
+.action-badge.fan_curve, .action-badge.rtc_schedule, .action-badge.oled_config{background:var(--good-soft);color:var(--good);}
+.action-badge.settings{background:var(--warn-soft);color:var(--warn);}
+.detail{font-family:var(--font-mono);font-size:11.5px;color:var(--muted);}
+.pager{display:flex;justify-content:space-between;align-items:center;margin-top:14px;color:var(--muted);font-size:12.5px;}
+.pager .btn-page{padding:7px 13px;border-radius:7px;border:1px solid var(--border);background:var(--panel);color:var(--text);font-size:12.5px;cursor:pointer;}
+.pager .btn-page:hover{background:var(--panel-2);}
+.pager .btn-page:disabled{opacity:.4;cursor:default;}
+
+@media (prefers-reduced-motion: no-preference){
+  .card{opacity:0;animation:fadeUp .5s cubic-bezier(.16,1,.3,1) forwards;animation-delay:.08s}
+  table.audit tr{transition:background-color .15s ease;}
+}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand"><div class="brand-mark">Ar</div><div><div class="brand-name">argonone</div><div class="brand-host">rpi01.lan</div></div></div>
+    <ul class="navlist">
+      <li><a href="03-dashboard.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="2" width="7" height="7" rx="1.5"/><rect x="11" y="2" width="7" height="7" rx="1.5"/><rect x="2" y="11" width="7" height="7" rx="1.5"/><rect x="11" y="11" width="7" height="7" rx="1.5"/></svg>Dashboard</a></li>
+      <li><a href="04-fan-curve-editor.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="1.5"/><path d="M10 10C10 4 15 3 16 7c.4 1.7-2 3-6 3"/><path d="M10 10C4 10 3 15 7 16c1.7.4 3-2 3-6"/><path d="M10 10C10 16 5 17 4 13c-.4-1.7 2-3 6-3"/><path d="M10 10c6 0 7-5 3-6-1.7-.4-3 2-3 6"/></svg>Fan control</a></li>
+      <li><a href="05-storage-raid.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><ellipse cx="10" cy="4.5" rx="7" ry="2.5"/><path d="M3 4.5v11c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-11"/><path d="M3 10c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/></svg>Storage &amp; RAID</a></li>
+      <li><a href="06-oled-display.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="4" width="16" height="10" rx="1.5"/><circle cx="10" cy="9" r="1.3"/><line x1="7" y1="17" x2="13" y2="17"/></svg>Display</a></li>
+      <li><a href="08-system-settings.html#power"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M11 2 4 12h5l-1 6 7-10h-5z"/></svg>Power &amp; RTC</a></li>
+      <div class="divider"></div>
+      <li><a href="07-users-rbac.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7.5" cy="6.5" r="3"/><path d="M2 17c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/><circle cx="15" cy="7.5" r="2.2"/><path d="M13.3 12.2c2.6.3 4.5 2.1 4.5 4.8"/></svg>Users</a></li>
+      <li><a class="active" href="09-audit-log.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 2.5h7l3 3V17a.5.5 0 0 1-.5.5h-9A.5.5 0 0 1 5 17z"/><path d="M12 2.5V6h3.5"/><path d="M7.5 10h5M7.5 12.5h5M7.5 15h3"/></svg>Audit log</a></li>
+      <li><a href="08-system-settings.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="3"/><path d="M10 2v2.4M10 15.6V18M18 10h-2.4M4.4 10H2M15.6 4.4l-1.7 1.7M6.1 13.9l-1.7 1.7M15.6 15.6l-1.7-1.7M6.1 6.1 4.4 4.4"/></svg>System</a></li>
+    </ul>
+    <div class="sidebar-foot"><div class="avatar">AR</div><div><div class="user-name">Aria Reyes</div><div class="user-role">Admin</div></div></div>
+  </aside>
+
+  <div class="main">
+    <div class="statusbar">
+      <div class="stat"><div class="stat-label">CPU temp</div><div class="stat-value"><span class="dot good"></span>46<span class="unit">°C</span></div></div>
+      <div class="stat"><div class="stat-label">Fan</div><div class="stat-value"><span class="dot good"></span>38<span class="unit">%</span></div></div>
+      <div class="stat"><div class="stat-label">RAM</div><div class="stat-value">3.8<span class="unit">/ 8 GB</span></div></div>
+      <div class="stat"><div class="stat-label">IP address</div><div class="stat-value">192.168.1.42</div></div>
+    </div>
+
+    <div class="content">
+      <div class="page-head">
+        <div>
+          <h1>Audit log</h1>
+          <p class="page-sub">Every privileged action taken through this admin account — who, what, and when. Read-only.</p>
+        </div>
+      </div>
+
+      <div class="filters">
+        <select id="fActor"><option value="">All users</option><option>Aria Reyes</option><option>John Doe</option><option>Min Kim</option></select>
+        <select id="fAction">
+          <option value="">All actions</option>
+          <option value="user">User management</option>
+          <option value="fan_curve">Fan curve</option>
+          <option value="rtc_schedule">Power &amp; RTC</option>
+          <option value="oled_config">Display</option>
+          <option value="settings">System settings</option>
+        </select>
+      </div>
+
+      <div class="card">
+        <table class="audit">
+          <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Detail</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="when">2026-07-18 09:14:02</td>
+              <td><div class="actor"><div class="avatar">AR</div><div class="actor-name">Aria Reyes</div></div></td>
+              <td><span class="action-badge user">user.create</span></td>
+              <td class="detail">{"username":"mkim","role":"viewer"}</td>
+            </tr>
+            <tr>
+              <td class="when">2026-07-18 08:52:41</td>
+              <td><div class="actor"><div class="avatar">JD</div><div class="actor-name">John Doe</div></div></td>
+              <td><span class="action-badge fan_curve">fan_curve.update</span></td>
+              <td class="detail">{"curve":"cpu"}</td>
+            </tr>
+            <tr>
+              <td class="when">2026-07-17 22:03:17</td>
+              <td><div class="actor"><div class="avatar">AR</div><div class="actor-name">Aria Reyes</div></div></td>
+              <td><span class="action-badge user">user.unlock</span></td>
+              <td class="detail">{"username":"jdoe"}</td>
+            </tr>
+            <tr>
+              <td class="when">2026-07-17 19:40:55</td>
+              <td><div class="actor"><div class="avatar">AR</div><div class="actor-name">Aria Reyes</div></div></td>
+              <td><span class="action-badge settings">settings.update_units</span></td>
+              <td class="detail">{"unit":"F"}</td>
+            </tr>
+            <tr>
+              <td class="when">2026-07-17 14:11:09</td>
+              <td><div class="actor"><div class="avatar">JD</div><div class="actor-name">John Doe</div></div></td>
+              <td><span class="action-badge rtc_schedule">rtc_schedule.update</span></td>
+              <td class="detail">{"entries":3}</td>
+            </tr>
+            <tr>
+              <td class="when">2026-07-16 11:27:33</td>
+              <td><div class="actor"><div class="avatar">AR</div><div class="actor-name">Aria Reyes</div></div></td>
+              <td><span class="action-badge user">user.reset_password</span></td>
+              <td class="detail">{"username":"mkim"}</td>
+            </tr>
+            <tr>
+              <td class="when">2026-07-15 20:05:48</td>
+              <td><div class="actor"><div class="avatar">AR</div><div class="actor-name">Aria Reyes</div></div></td>
+              <td><span class="action-badge oled_config">oled_config.update</span></td>
+              <td class="detail">{"switch_duration_secs":8}</td>
+            </tr>
+            <tr>
+              <td class="when">2026-07-14 09:00:12</td>
+              <td><div class="actor"><div class="avatar">AR</div><div class="actor-name">Aria Reyes</div></div></td>
+              <td><span class="action-badge user">user.update_role</span></td>
+              <td class="detail">{"username":"jdoe","role":"operator"}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="pager">
+        <span>Showing 1–8 of 214</span>
+        <div style="display:flex;gap:8px;">
+          <button class="btn-page" disabled>&larr; Newer</button>
+          <button class="btn-page">Older &rarr;</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+function applyFilters(){
+  const actor = document.getElementById('fActor').value;
+  const action = document.getElementById('fAction').value;
+  document.querySelectorAll('table.audit tbody tr').forEach(tr => {
+    const actorName = tr.querySelector('.actor-name').textContent;
+    const actionBadge = tr.querySelector('.action-badge');
+    const matchesActor = !actor || actorName === actor;
+    const matchesAction = !action || actionBadge.classList.contains(action);
+    tr.style.display = (matchesActor && matchesAction) ? '' : 'none';
+  });
+}
+document.getElementById('fActor').addEventListener('change', applyFilters);
+document.getElementById('fAction').addEventListener('change', applyFilters);
+</script>
+</body>
+</html>

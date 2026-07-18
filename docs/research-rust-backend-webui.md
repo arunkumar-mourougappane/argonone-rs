@@ -749,6 +749,47 @@ Practical notes:
   editor are both small enough for hand-authored inline SVG (per the
   mockups), same call as before.
 
+### 3.6 Post-v0.5.0 audit pass: two screens that got built without ever being scoped
+
+Gap-closing pass run after v0.5.0 shipped (Users admin, RTC schedule, OLED
+config) — checked what those features actually wired up against what got
+mocked/roadmapped for them, the same way §3.3 checked the dashboard against
+the inherited Python surface rather than assuming the original scope was
+complete. Two real gaps, neither in any mockup or ROADMAP milestone before
+now:
+
+**Audit log is write-only.** v0.5.0 wired `audit_log` inserts into every
+privileged mutation that exists today — `fan_curve.update`, `oled_
+config.update`, `rtc_schedule.update`, `settings.update_units`, and
+`user.create`/`update_role`/`delete`/`reset_password`/`unlock` (`src/web/
+fan_curve.rs`, `oled.rs`, `rtc.rs`, `system.rs`, `users.rs`) — but nothing
+reads the table back. The only way to answer "who changed the fan curve
+last Tuesday" today is `sqlite3 argonone.db "select * from audit_log"` on
+the box itself. For a system whose entire pitch to a multi-admin household
+is RBAC + accountability (A§2), that's the one screen actually missing
+from the users/security story — everything else in that story (roles,
+lockout, forced password change) has a UI; this doesn't. Scope: one
+admin-only page, `GET /audit` — paginated read of the existing table
+joined against `users` for the actor's display name, a role/action filter,
+no new schema, no write path. Mocked at `docs/mockups/09-audit-log.html`.
+
+**No self-service password rotation.** `/account/change-password`
+(`src/web/login.rs`) exists and works, but the only route to it is the
+forced `must_change_pw` redirect (`login.rs:21`) — a user who wants to
+voluntarily rotate their own password (routine hygiene, suspected
+compromise) has no path to that already-working page short of an admin
+issuing them a fresh temp password via the Users page, which itself forces
+a change on next login. That's a workaround, not a feature. Fix is
+sidebar-only: an "Account" entry in the sidebar footer's account menu
+(next to the existing avatar/role display) linking to the existing route
+— no new backend logic. Mocked at `docs/mockups/10-account.html`, which
+also documents the destination screen (previously never mocked at all,
+despite being live code since v0.1.0/A§2.2's forced-change flow).
+
+Both are small enough to land inside v0.6.0 (W§ROADMAP) rather than
+warranting their own milestone — the audit viewer in particular closes a
+gap the RBAC story itself created, not a nice-to-have.
+
 ## 4. Migration/compat notes
 
 - Keep config file paths and formats identical (`/etc/argononed.conf`,

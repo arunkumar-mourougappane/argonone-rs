@@ -263,6 +263,16 @@ closes the researched-but-not-yet-built dashboard gaps.
 - IR remote config page (learn/store code)
 - Setup-wizard exposure window: one-time console-printed setup token
   (A§1.1)
+- Audit log viewer (W§3.6): `audit_log` has been populated since v0.5.0
+  by every privileged mutation but nothing reads it back — admin-only
+  `GET /audit`, paginated, actor/action filters, no new schema. Mocked
+  at `docs/mockups/09-audit-log.html`.
+- Self-service "change my password" (W§3.6): `/account/change-password`
+  (`src/web/login.rs`) already works but is only reachable via the
+  forced `must_change_pw` redirect — add a sidebar account-menu link to
+  it for voluntary use, no new backend route. Mocked at
+  `docs/mockups/10-account.html` (which also documents the destination
+  screen, never mocked before now).
 
 **Deferred, not planned**: per-core CPU, disk I/O throughput, OS-update
 count (W§3.3 Tier 2 — real, just not scheduled yet); container

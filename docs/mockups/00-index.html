@@ -67,6 +67,7 @@ footer{color:var(--muted);font-size:13px;border-top:1px solid var(--border);padd
   .flow li:nth-child(3){animation-delay:.20s} .flow li:nth-child(4){animation-delay:.24s}
   .flow li:nth-child(5){animation-delay:.28s} .flow li:nth-child(6){animation-delay:.32s}
   .flow li:nth-child(7){animation-delay:.36s} .flow li:nth-child(8){animation-delay:.40s}
+  .flow li:nth-child(9){animation-delay:.44s} .flow li:nth-child(10){animation-delay:.48s}
 }
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 </style>
@@ -120,6 +121,16 @@ footer{color:var(--muted);font-size:13px;border-top:1px solid var(--border);padd
       <span class="num">8</span>
       <span><span class="flow-title">System</span><div class="flow-desc">Units, RTC schedule, IR learning, HTTPS/remote access, firmware, danger zone.</div></span>
       <span class="flow-tag">operator+</span>
+    </a></li>
+    <li><a href="09-audit-log.html">
+      <span class="num">9</span>
+      <span><span class="flow-title">Audit log</span><div class="flow-desc">Read-only view of the audit_log table populated since v0.5.0 — who changed what, when. Planned for v0.6.0.</div></span>
+      <span class="flow-tag">admin only · v0.6.0</span>
+    </a></li>
+    <li><a href="10-account.html">
+      <span class="num">10</span>
+      <span><span class="flow-title">Account</span><div class="flow-desc">Self-service "change my password" entry point — the route already exists, just never had a link. Planned for v0.6.0.</div></span>
+      <span class="flow-tag">all roles · v0.6.0</span>
     </a></li>
   </ul>
 
