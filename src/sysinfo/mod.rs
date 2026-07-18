@@ -385,6 +385,18 @@ pub fn read_pi_model() -> Option<String> {
 /// Local IP via the classic UDP-connect trick: connecting a UDP socket
 /// doesn't send any packets, it just makes the kernel pick a source
 /// address/route, which `local_addr()` then reports.
+/// System uptime in seconds, from `/proc/uptime`'s first field (the
+/// second is idle time summed across cores, not needed here).
+pub fn read_uptime_secs() -> Option<u64> {
+    let raw = fs::read_to_string("/proc/uptime").ok()?;
+    parse_uptime_secs(&raw)
+}
+
+fn parse_uptime_secs(raw: &str) -> Option<u64> {
+    let seconds: f64 = raw.split_whitespace().next()?.parse().ok()?;
+    Some(seconds as u64)
+}
+
 pub fn read_local_ip() -> Option<std::net::IpAddr> {
     let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
     socket.connect("8.8.8.8:80").ok()?;
@@ -421,6 +433,16 @@ mod tests {
     #[test]
     fn parse_cpu_temp_c_rejects_garbage() {
         assert_eq!(parse_cpu_temp_c("not-a-number"), None);
+    }
+
+    #[test]
+    fn parse_uptime_secs_reads_first_field_only() {
+        assert_eq!(parse_uptime_secs("123456.78 987654.32\n"), Some(123456));
+    }
+
+    #[test]
+    fn parse_uptime_secs_rejects_garbage() {
+        assert_eq!(parse_uptime_secs("not-a-number"), None);
     }
 
     #[test]
