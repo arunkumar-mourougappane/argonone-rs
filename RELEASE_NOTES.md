@@ -30,7 +30,7 @@ v0.5.0 is **EON web screens + Users/RBAC admin** — it completes web-UI parity 
 
 ## Known Limitations
 
-- **Not yet verified on real Argon EON hardware.** Every feature in this release has been route-tested (170 automated tests, plus manual smoke-testing against `Board::NoCase` and `Board::Eon` on a non-Pi dev machine) but never run against an actual PCF8563 RTC or SSD1306 OLED panel. The RTC wake/sleep scheduling and the OLED live preview in particular are the two features most likely to reveal something only real hardware would — this is the same bar v0.1.0–v0.4.0 were held to before tagging, and it hasn't been met yet for v0.5.0. Treat this release as functionally complete but hardware-unverified until that pass happens.
+- **Not yet verified on real Argon EON hardware.** Every feature in this release is covered by 170 automated tests (including EON-board-gated routes, exercised via a `Board::Eon` test fixture — never a live server) and manual smoke-testing against a locally-running server, but that live testing only ever ran as `Board::NoCase`: this dev machine is non-Linux, and `hardware::detect` has no override to force `Board::Eon` at runtime off real hardware. Neither the RTC wake/sleep scheduling nor the OLED live preview has ever driven an actual PCF8563 or SSD1306. This is the same bar v0.1.0–v0.4.0 were held to before tagging, and it hasn't been met yet for v0.5.0. Treat this release as functionally complete but hardware-unverified until that pass happens.
 
 ## Deploying
 
