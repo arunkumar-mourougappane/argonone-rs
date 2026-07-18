@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Account — argonone</title>
+<title>Logs — argonone</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 :root{
@@ -38,25 +38,24 @@ a{color:inherit;}
 .navlist{list-style:none;padding:0;margin:6px 0 0;display:flex;flex-direction:column;gap:1px;}
 .navlist a{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;color:var(--muted);text-decoration:none;font-size:13px;font-weight:500;}
 .navlist a:hover{background:var(--panel-2);color:var(--text);}
+.navlist a.active{background:var(--accent-soft);color:var(--accent);}
 .navlist svg{width:16px;height:16px;flex:none;}
 .navlist .divider{height:1px;background:var(--border);margin:10px 4px;}
-
 .sidebar-foot{margin-top:auto;padding-top:12px;border-top:1px solid var(--border);position:relative;}
 .account-row{display:flex;align-items:center;gap:9px;padding:6px;border-radius:8px;cursor:pointer;background:none;border:none;width:100%;text-align:left;font-family:var(--font-ui);color:var(--text);}
 .account-row:hover{background:var(--panel-2);}
-.avatar{width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:11px;font-weight:600;flex:none;}
-.user-name{font-size:12.5px;font-weight:600;line-height:1.3;}
-.user-role{font-family:var(--font-mono);font-size:10px;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;}
 .chevron{margin-left:auto;color:var(--muted);transition:transform .15s ease;}
 .account-row[aria-expanded="true"] .chevron{transform:rotate(180deg);}
 .account-menu{position:absolute;bottom:calc(100% + 6px);left:0;right:0;background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);padding:6px;display:none;flex-direction:column;gap:1px;}
 .account-menu.open{display:flex;}
-.account-menu a, .account-menu button{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:7px;color:var(--text);text-decoration:none;font-size:12.5px;font-weight:500;background:none;border:none;font-family:var(--font-ui);cursor:pointer;text-align:left;width:100%;}
-.account-menu a:hover, .account-menu button:hover{background:var(--panel-2);}
+.account-menu a{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:7px;color:var(--text);text-decoration:none;font-size:12.5px;font-weight:500;}
+.account-menu a:hover{background:var(--panel-2);}
 .account-menu svg{width:15px;height:15px;flex:none;color:var(--muted);}
-.account-menu .danger:hover{color:var(--crit);}
-.account-menu .danger:hover svg{color:var(--crit);}
-
+.account-menu a.danger:hover{color:var(--crit);}
+.account-menu a.danger:hover svg{color:var(--crit);}
+.avatar{width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:11px;font-weight:600;flex:none;}
+.user-name{font-size:12.5px;font-weight:600;line-height:1.3;}
+.user-role{font-family:var(--font-mono);font-size:10px;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;}
 .main{flex:1;min-width:0;}
 .statusbar{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--border);background:var(--panel);}
 .stat{padding:13px 22px;border-right:1px solid var(--border);}
@@ -64,28 +63,40 @@ a{color:inherit;}
 .stat-value{font-family:var(--font-mono);font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;display:flex;align-items:baseline;gap:5px;}
 .stat-value .unit{font-size:12px;color:var(--muted);font-weight:500;}
 .dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:6px;background:var(--good);}
-.content{padding:26px 26px 64px;max-width:1160px;}
-.page-head{margin-bottom:20px;}
+.content{padding:26px 26px 64px;max-width:1240px;}
+.page-head{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:20px;gap:16px;flex-wrap:wrap;}
 .page-head h1{font-size:20px;margin:0 0 4px;font-weight:700;}
 .page-sub{color:var(--muted);font-size:13px;margin:0;}
 
-.callout{background:var(--accent-soft);color:var(--accent);border-radius:10px;padding:12px 16px;font-size:12.5px;font-weight:500;margin-bottom:20px;max-width:520px;}
+.toolbar{display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap;}
+.toolbar select{padding:8px 11px;border-radius:8px;border:1px solid var(--border);background:var(--panel);color:var(--text);font-family:var(--font-mono);font-size:12.5px;}
+.toolbar select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+.spacer{flex:1;}
+.toggle-follow{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:500;cursor:pointer;user-select:none;}
+.toggle{width:32px;height:18px;border-radius:9px;background:var(--good);position:relative;flex:none;transition:background-color .2s ease;}
+.toggle.off{background:var(--border);}
+.toggle i{position:absolute;top:2px;left:16px;width:14px;height:14px;border-radius:50%;background:#fff;transition:left .2s cubic-bezier(.34,1.56,.64,1);}
+.toggle.off i{left:2px;}
+.btn-outline{padding:8px 14px;border-radius:8px;border:1px solid var(--border);background:var(--panel);color:var(--text);font-family:var(--font-ui);font-weight:600;font-size:12.5px;cursor:pointer;}
+.btn-outline:hover{background:var(--panel-2);}
 
-.pw-card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:28px 30px;max-width:420px;}
-.pw-card h2{font-size:16px;margin:0 0 6px;font-weight:700;}
-.pw-card .lede{color:var(--muted);font-size:13px;line-height:1.55;margin:0 0 20px;}
-.field{margin-bottom:16px;}
-.field label{display:block;font-size:12.5px;font-weight:600;margin-bottom:6px;}
-input[type=password]{width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);font-family:var(--font-mono);font-size:13.5px;}
-input[type=password]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
-.btn{padding:10px 16px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-family:var(--font-ui);font-weight:600;font-size:13.5px;cursor:pointer;margin-top:4px;}
-.btn.ghost{background:none;border:1px solid var(--border);color:var(--text);margin-left:8px;}
+.log-card{background:#0a0d12;border:1px solid var(--border);border-radius:12px;padding:14px 0;overflow:hidden;}
+.log-lines{max-height:560px;overflow-y:auto;font-family:var(--font-mono);font-size:12px;line-height:1.9;}
+.log-line{padding:2px 20px;display:grid;grid-template-columns:150px 60px 1fr;gap:12px;white-space:pre;}
+.log-line:hover{background:rgba(255,255,255,.03);}
+.log-ts{color:#5a6272;}
+.log-level{font-weight:700;letter-spacing:.03em;}
+.log-level.info{color:#7fa8c9;}
+.log-level.warn{color:#e3a83f;}
+.log-level.error{color:#e5677a;}
+.log-msg{color:#c6cbd6;white-space:normal;overflow-wrap:anywhere;}
+.log-line.warn .log-msg{color:#e3c98a;}
+.log-line.error .log-msg{color:#f0a5b0;}
 
-.toast{position:fixed;bottom:22px;right:22px;background:var(--panel);border:1px solid var(--border);border-radius:10px;
-  box-shadow:var(--shadow);padding:11px 16px;font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:8px;
-  transform:translateY(12px);opacity:0;pointer-events:none;transition:transform .25s cubic-bezier(.16,1,.3,1), opacity .25s ease;z-index:20;}
-.toast.show{transform:translateY(0);opacity:1;}
-.toast-dot{width:7px;height:7px;border-radius:50%;background:var(--good);flex:none;}
+@media (prefers-reduced-motion: no-preference){
+  .log-line.new{animation:lineIn .3s ease both;}
+}
+@keyframes lineIn{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
 </style>
 </head>
 <body>
@@ -101,15 +112,14 @@ input[type=password]:focus{outline:none;border-color:var(--accent);box-shadow:0 
       <div class="divider"></div>
       <li><a href="07-users-rbac.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7.5" cy="6.5" r="3"/><path d="M2 17c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/><circle cx="15" cy="7.5" r="2.2"/><path d="M13.3 12.2c2.6.3 4.5 2.1 4.5 4.8"/></svg>Users</a></li>
       <li><a href="09-audit-log.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 2.5h7l3 3V17a.5.5 0 0 1-.5.5h-9A.5.5 0 0 1 5 17z"/><path d="M12 2.5V6h3.5"/><path d="M7.5 10h5M7.5 12.5h5M7.5 15h3"/></svg>Audit log</a></li>
-      <li><a href="12-logs.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="2.5" width="14" height="15" rx="1.5"/><path d="M6.5 6.5h7M6.5 9.5h7M6.5 12.5h4"/></svg>Logs</a></li>
+      <li><a class="active" href="12-logs.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="2.5" width="14" height="15" rx="1.5"/><path d="M6.5 6.5h7M6.5 9.5h7M6.5 12.5h4"/></svg>Logs</a></li>
       <li><a href="13-notifications.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 2.6c-1.9 0-3.4 1.5-3.4 3.5v2.3c0 .8-.3 1.5-.9 2.1l-.9.9h10.4l-.9-.9a3 3 0 0 1-.9-2.1V6.1c0-2-1.5-3.5-3.4-3.5z"/><path d="M8.3 15.4a1.8 1.8 0 0 0 3.4 0"/></svg>Notifications</a></li>
       <li><a href="08-system-settings.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="3"/><path d="M10 2v2.4M10 15.6V18M18 10h-2.4M4.4 10H2M15.6 4.4l-1.7 1.7M6.1 13.9l-1.7 1.7M15.6 15.6l-1.7-1.7M6.1 6.1 4.4 4.4"/></svg>System</a></li>
     </ul>
-
     <div class="sidebar-foot">
       <div class="account-menu" id="accountMenu">
-        <a href="#" id="menuChangePw"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="9" width="12" height="8" rx="1.5"/><path d="M6.5 9V6a3.5 3.5 0 0 1 7 0v3"/></svg>Change password</a>
-        <button class="danger" type="button"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 17H4.5A1.5 1.5 0 0 1 3 15.5v-11A1.5 1.5 0 0 1 4.5 3H8"/><path d="M13 14l4-4-4-4"/><path d="M17 10H8"/></svg>Log out</button>
+        <a href="10-account.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="9" width="12" height="8" rx="1.5"/><path d="M6.5 9V6a3.5 3.5 0 0 1 7 0v3"/></svg>Change password</a>
+        <a href="02-login.html" class="danger"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 17H4.5A1.5 1.5 0 0 1 3 15.5v-11A1.5 1.5 0 0 1 4.5 3H8"/><path d="M13 14l4-4-4-4"/><path d="M17 10H8"/></svg>Log out</a>
       </div>
       <button class="account-row" id="accountToggle" aria-expanded="false">
         <div class="avatar">AR</div>
@@ -128,65 +138,95 @@ input[type=password]:focus{outline:none;border-color:var(--accent);box-shadow:0 
     </div>
 
     <div class="content">
-      <div id="dashboardView">
-        <div class="page-head">
-          <h1>Dashboard</h1>
-          <p class="page-sub">Click the account row in the bottom-left corner to see the gap this mockup closes.</p>
-        </div>
-        <div class="callout">
-          Today, <b>/account/change-password</b> only exists as a forced redirect after an admin-issued reset — there's no link here for a user who just wants to rotate their own password voluntarily. Click the account menu (bottom-left) → "Change password" to see the fix.
+      <div class="page-head">
+        <div>
+          <h1>Logs</h1>
+          <p class="page-sub">Live tail of <code>journalctl -u argonone-rs</code> — read-only, no way to send commands from here.</p>
         </div>
       </div>
 
-      <div id="pwView" style="display:none;">
-        <div class="page-head">
-          <h1>Change password</h1>
-          <p class="page-sub">Same route (<code>/account/change-password</code>) the forced-reset flow already uses — reused for voluntary rotation, not a new page.</p>
-        </div>
-        <div class="pw-card">
-          <h2>Set a new password</h2>
-          <p class="lede">Choose a new password for your account.</p>
-          <div class="field"><label>New password</label><input type="password" placeholder="At least 8 characters"></div>
-          <div class="field"><label>Confirm new password</label><input type="password"></div>
-          <button class="btn" id="submitPw">Set password</button>
-          <button class="btn ghost" id="cancelPw">Cancel</button>
+      <div class="toolbar">
+        <select id="fLevel"><option value="">All levels</option><option value="info">Info</option><option value="warn">Warning</option><option value="error">Error</option></select>
+        <select id="fSince"><option value="15m">Last 15 minutes</option><option value="1h" selected>Last hour</option><option value="24h">Last 24 hours</option></select>
+        <div class="spacer"></div>
+        <label class="toggle-follow"><span class="toggle" id="followToggle"><i></i></span>Follow (live)</label>
+        <button class="btn-outline" id="downloadBtn">Download .log</button>
+      </div>
+
+      <div class="log-card">
+        <div class="log-lines" id="logLines">
+          <div class="log-line info"><span class="log-ts">2026-07-18 21:04:02</span><span class="log-level info">INFO</span><span class="log-msg">web server listening addr=0.0.0.0:8080</span></div>
+          <div class="log-line info"><span class="log-ts">2026-07-18 21:04:02</span><span class="log-level info">INFO</span><span class="log-msg">argonone-rs daemon starting board=Eon</span></div>
+          <div class="log-line info"><span class="log-ts">2026-07-18 21:05:11</span><span class="log-level info">INFO</span><span class="log-msg">fan control: cpu_temp=46.2C target=38%</span></div>
+          <div class="log-line warn"><span class="log-ts">2026-07-18 21:07:44</span><span class="log-level warn">WARN</span><span class="log-msg">rtc: wake alarm re-armed after schedule edit, next=Mon 06:30</span></div>
+          <div class="log-line info"><span class="log-ts">2026-07-18 21:11:02</span><span class="log-level info">INFO</span><span class="log-msg">oled: screen selection changed clock -&gt; ip</span></div>
+          <div class="log-line error"><span class="log-ts">2026-07-18 21:14:20</span><span class="log-level error">ERROR</span><span class="log-msg">smartctl: failed to read temperature for /dev/sdb, holding last known value</span></div>
+          <div class="log-line info"><span class="log-ts">2026-07-18 21:15:00</span><span class="log-level info">INFO</span><span class="log-msg">audit: user.update_role actor=1 target=jdoe role=operator</span></div>
+          <div class="log-line info"><span class="log-ts">2026-07-18 21:18:30</span><span class="log-level info">INFO</span><span class="log-msg">fan control: cpu_temp=47.1C target=41%</span></div>
         </div>
       </div>
     </div>
   </div>
 </div>
-<div class="toast" id="toast"><span class="toast-dot"></span><span id="toastMsg">Password updated</span></div>
 <script>
-const toggle = document.getElementById('accountToggle');
-const menu = document.getElementById('accountMenu');
-toggle.addEventListener('click', () => {
-  const open = menu.classList.toggle('open');
-  toggle.setAttribute('aria-expanded', open);
-});
-document.addEventListener('click', (e) => {
-  if (!e.target.closest('.sidebar-foot')) { menu.classList.remove('open'); toggle.setAttribute('aria-expanded', 'false'); }
+(function(){
+  var toggle = document.getElementById('accountToggle');
+  var menu = document.getElementById('accountMenu');
+  if(!toggle || !menu) return;
+  toggle.addEventListener('click', function(){
+    var open = menu.classList.toggle('open');
+    toggle.setAttribute('aria-expanded', open);
+  });
+  document.addEventListener('click', function(e){
+    if(!e.target.closest('.sidebar-foot')){ menu.classList.remove('open'); toggle.setAttribute('aria-expanded', 'false'); }
+  });
+})();
+
+// Simulated live tail — production version follows the journal via a
+// long-lived response/WS the same way /api/ws already streams stats.
+const logLines = document.getElementById('logLines');
+const followToggle = document.getElementById('followToggle');
+const fLevel = document.getElementById('fLevel');
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let following = true;
+const SAMPLE_MSGS = [
+  ['info', 'fan control: cpu_temp={t}C target={p}%'],
+  ['info', 'stats tick: ram_used_pct={p}%'],
+  ['warn', 'rtc: sleep schedule matched, signaling poweroff in 10s'],
+  ['info', 'oled: screen selection changed'],
+];
+
+followToggle.addEventListener('click', () => {
+  following = !following;
+  followToggle.classList.toggle('off', !following);
 });
 
-const dashboardView = document.getElementById('dashboardView');
-const pwView = document.getElementById('pwView');
-document.getElementById('menuChangePw').addEventListener('click', (e) => {
-  e.preventDefault();
-  menu.classList.remove('open');
-  toggle.setAttribute('aria-expanded', 'false');
-  dashboardView.style.display = 'none';
-  pwView.style.display = '';
-});
-document.getElementById('cancelPw').addEventListener('click', () => {
-  pwView.style.display = 'none';
-  dashboardView.style.display = '';
-});
-document.getElementById('submitPw').addEventListener('click', () => {
-  pwView.style.display = 'none';
-  dashboardView.style.display = '';
-  const toast = document.getElementById('toast');
-  toast.classList.add('show');
-  setTimeout(() => toast.classList.remove('show'), 2600);
-});
+function fmtNow() {
+  const d = new Date();
+  return d.toISOString().replace('T', ' ').slice(0, 19);
+}
+
+function appendLine() {
+  if (!following) return;
+  const [level, tmpl] = SAMPLE_MSGS[Math.floor(Math.random() * SAMPLE_MSGS.length)];
+  const msg = tmpl.replace('{t}', (40 + Math.random() * 15).toFixed(1)).replace('{p}', Math.round(20 + Math.random() * 50));
+  const row = document.createElement('div');
+  row.className = 'log-line ' + level + (reduceMotion ? '' : ' new');
+  row.innerHTML = `<span class="log-ts">${fmtNow()}</span><span class="log-level ${level}">${level.toUpperCase()}</span><span class="log-msg">${msg}</span>`;
+  logLines.appendChild(row);
+  logLines.scrollTop = logLines.scrollHeight;
+  applyFilter();
+}
+
+function applyFilter() {
+  const level = fLevel.value;
+  logLines.querySelectorAll('.log-line').forEach(l => {
+    l.style.display = (!level || l.classList.contains(level)) ? '' : 'none';
+  });
+}
+fLevel.addEventListener('change', applyFilter);
+
+setInterval(appendLine, 3200);
 </script>
 </body>
 </html>

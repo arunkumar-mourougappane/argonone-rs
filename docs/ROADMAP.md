@@ -313,6 +313,20 @@ Turns "a binary that works" into "a thing someone installs."
   New `settings` key (`dashboard_layout`), `GET/PUT` following the
   existing DB-backed-with-fallback-default pattern — no new architecture.
   Mocked at `docs/mockups/11-dashboard-reorder.html`.
+- System log viewer (W§3.8, found comparing against Cockpit's Logs
+  module): admin-only, read-only page tailing `journalctl -u
+  argonone-rs` — the only way to see daemon logs today is SSH. Shells
+  out the same way `sysinfo` already does for `smartctl`/`df`, no new
+  persistence. Mocked at `docs/mockups/12-logs.html`.
+- Critical-state webhook notification (W§3.8, found comparing against
+  Netdata's alert model): one configurable webhook URL, POSTed once on
+  a severity transition into `crit` (CPU/disk temp, RAID degraded) —
+  reuses `web/storage.rs`'s existing `temp_severity`/`degraded`
+  computation, doesn't act on it today beyond a badge color. Not a
+  multi-channel notification engine — one URL, opt-in, fires on
+  transitions only. This app's first outbound network call, so treat it
+  deliberately rather than bolt it on. Mocked at
+  `docs/mockups/13-notifications.html`.
 
 ---
 

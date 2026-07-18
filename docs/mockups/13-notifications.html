@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Account — argonone</title>
+<title>Notifications — argonone</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 :root{
@@ -38,25 +38,24 @@ a{color:inherit;}
 .navlist{list-style:none;padding:0;margin:6px 0 0;display:flex;flex-direction:column;gap:1px;}
 .navlist a{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;color:var(--muted);text-decoration:none;font-size:13px;font-weight:500;}
 .navlist a:hover{background:var(--panel-2);color:var(--text);}
+.navlist a.active{background:var(--accent-soft);color:var(--accent);}
 .navlist svg{width:16px;height:16px;flex:none;}
 .navlist .divider{height:1px;background:var(--border);margin:10px 4px;}
-
 .sidebar-foot{margin-top:auto;padding-top:12px;border-top:1px solid var(--border);position:relative;}
 .account-row{display:flex;align-items:center;gap:9px;padding:6px;border-radius:8px;cursor:pointer;background:none;border:none;width:100%;text-align:left;font-family:var(--font-ui);color:var(--text);}
 .account-row:hover{background:var(--panel-2);}
-.avatar{width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:11px;font-weight:600;flex:none;}
-.user-name{font-size:12.5px;font-weight:600;line-height:1.3;}
-.user-role{font-family:var(--font-mono);font-size:10px;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;}
 .chevron{margin-left:auto;color:var(--muted);transition:transform .15s ease;}
 .account-row[aria-expanded="true"] .chevron{transform:rotate(180deg);}
 .account-menu{position:absolute;bottom:calc(100% + 6px);left:0;right:0;background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);padding:6px;display:none;flex-direction:column;gap:1px;}
 .account-menu.open{display:flex;}
-.account-menu a, .account-menu button{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:7px;color:var(--text);text-decoration:none;font-size:12.5px;font-weight:500;background:none;border:none;font-family:var(--font-ui);cursor:pointer;text-align:left;width:100%;}
-.account-menu a:hover, .account-menu button:hover{background:var(--panel-2);}
+.account-menu a{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:7px;color:var(--text);text-decoration:none;font-size:12.5px;font-weight:500;}
+.account-menu a:hover{background:var(--panel-2);}
 .account-menu svg{width:15px;height:15px;flex:none;color:var(--muted);}
-.account-menu .danger:hover{color:var(--crit);}
-.account-menu .danger:hover svg{color:var(--crit);}
-
+.account-menu a.danger:hover{color:var(--crit);}
+.account-menu a.danger:hover svg{color:var(--crit);}
+.avatar{width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:11px;font-weight:600;flex:none;}
+.user-name{font-size:12.5px;font-weight:600;line-height:1.3;}
+.user-role{font-family:var(--font-mono);font-size:10px;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;}
 .main{flex:1;min-width:0;}
 .statusbar{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--border);background:var(--panel);}
 .stat{padding:13px 22px;border-right:1px solid var(--border);}
@@ -64,28 +63,49 @@ a{color:inherit;}
 .stat-value{font-family:var(--font-mono);font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;display:flex;align-items:baseline;gap:5px;}
 .stat-value .unit{font-size:12px;color:var(--muted);font-weight:500;}
 .dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:6px;background:var(--good);}
-.content{padding:26px 26px 64px;max-width:1160px;}
+.content{padding:26px 26px 64px;max-width:760px;}
 .page-head{margin-bottom:20px;}
 .page-head h1{font-size:20px;margin:0 0 4px;font-weight:700;}
 .page-sub{color:var(--muted);font-size:13px;margin:0;}
 
-.callout{background:var(--accent-soft);color:var(--accent);border-radius:10px;padding:12px 16px;font-size:12.5px;font-weight:500;margin-bottom:20px;max-width:520px;}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:22px 24px;margin-bottom:16px;}
+.card-title{font-weight:600;font-size:13.5px;margin-bottom:4px;}
+.card-hint{color:var(--muted);font-size:12px;margin:0 0 16px;}
 
-.pw-card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:28px 30px;max-width:420px;}
-.pw-card h2{font-size:16px;margin:0 0 6px;font-weight:700;}
-.pw-card .lede{color:var(--muted);font-size:13px;line-height:1.55;margin:0 0 20px;}
+.switch-row{display:flex;align-items:center;justify-content:space-between;padding:2px 0 18px;}
+.sw-label{font-size:13px;font-weight:600;}
+.sw-sub{font-size:11.5px;color:var(--muted);margin-top:2px;}
+.toggle{width:36px;height:20px;border-radius:10px;background:var(--good);position:relative;flex:none;cursor:pointer;transition:background-color .2s ease;}
+.toggle.off{background:var(--border);}
+.toggle i{position:absolute;top:2px;left:18px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .2s cubic-bezier(.34,1.56,.64,1);}
+.toggle.off i{left:2px;}
+
 .field{margin-bottom:16px;}
-.field label{display:block;font-size:12.5px;font-weight:600;margin-bottom:6px;}
-input[type=password]{width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);font-family:var(--font-mono);font-size:13.5px;}
-input[type=password]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
-.btn{padding:10px 16px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-family:var(--font-ui);font-weight:600;font-size:13.5px;cursor:pointer;margin-top:4px;}
+.field label{display:block;font-size:12.5px;font-weight:600;margin-bottom:7px;}
+.field .hint{font-weight:400;color:var(--muted);font-size:11.5px;}
+input[type=url]{width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);font-family:var(--font-mono);font-size:13px;}
+input[type=url]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+input[type=url]:disabled{opacity:.5;}
+
+.trigger-list{display:flex;flex-direction:column;gap:2px;}
+.trigger-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-top:1px solid var(--border);}
+.trigger-row:first-child{border-top:none;}
+.trigger-label{font-size:12.5px;font-weight:500;display:flex;align-items:center;gap:8px;}
+.badge{font-family:var(--font-mono);font-size:10.5px;padding:3px 9px;border-radius:20px;font-weight:600;}
+.badge.crit{background:var(--crit-soft);color:var(--crit);}
+
+.btn{padding:10px 16px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-family:var(--font-ui);font-weight:600;font-size:13px;cursor:pointer;}
 .btn.ghost{background:none;border:1px solid var(--border);color:var(--text);margin-left:8px;}
+.btn:disabled{opacity:.5;cursor:default;}
+
+.status-line{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin-top:14px;}
+.status-line .dot{margin:0;}
 
 .toast{position:fixed;bottom:22px;right:22px;background:var(--panel);border:1px solid var(--border);border-radius:10px;
   box-shadow:var(--shadow);padding:11px 16px;font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:8px;
   transform:translateY(12px);opacity:0;pointer-events:none;transition:transform .25s cubic-bezier(.16,1,.3,1), opacity .25s ease;z-index:20;}
 .toast.show{transform:translateY(0);opacity:1;}
-.toast-dot{width:7px;height:7px;border-radius:50%;background:var(--good);flex:none;}
+.toast .dot{margin-right:0;}
 </style>
 </head>
 <body>
@@ -102,14 +122,13 @@ input[type=password]:focus{outline:none;border-color:var(--accent);box-shadow:0 
       <li><a href="07-users-rbac.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7.5" cy="6.5" r="3"/><path d="M2 17c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/><circle cx="15" cy="7.5" r="2.2"/><path d="M13.3 12.2c2.6.3 4.5 2.1 4.5 4.8"/></svg>Users</a></li>
       <li><a href="09-audit-log.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 2.5h7l3 3V17a.5.5 0 0 1-.5.5h-9A.5.5 0 0 1 5 17z"/><path d="M12 2.5V6h3.5"/><path d="M7.5 10h5M7.5 12.5h5M7.5 15h3"/></svg>Audit log</a></li>
       <li><a href="12-logs.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="2.5" width="14" height="15" rx="1.5"/><path d="M6.5 6.5h7M6.5 9.5h7M6.5 12.5h4"/></svg>Logs</a></li>
-      <li><a href="13-notifications.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 2.6c-1.9 0-3.4 1.5-3.4 3.5v2.3c0 .8-.3 1.5-.9 2.1l-.9.9h10.4l-.9-.9a3 3 0 0 1-.9-2.1V6.1c0-2-1.5-3.5-3.4-3.5z"/><path d="M8.3 15.4a1.8 1.8 0 0 0 3.4 0"/></svg>Notifications</a></li>
+      <li><a class="active" href="13-notifications.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 2.6c-1.9 0-3.4 1.5-3.4 3.5v2.3c0 .8-.3 1.5-.9 2.1l-.9.9h10.4l-.9-.9a3 3 0 0 1-.9-2.1V6.1c0-2-1.5-3.5-3.4-3.5z"/><path d="M8.3 15.4a1.8 1.8 0 0 0 3.4 0"/></svg>Notifications</a></li>
       <li><a href="08-system-settings.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="3"/><path d="M10 2v2.4M10 15.6V18M18 10h-2.4M4.4 10H2M15.6 4.4l-1.7 1.7M6.1 13.9l-1.7 1.7M15.6 15.6l-1.7-1.7M6.1 6.1 4.4 4.4"/></svg>System</a></li>
     </ul>
-
     <div class="sidebar-foot">
       <div class="account-menu" id="accountMenu">
-        <a href="#" id="menuChangePw"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="9" width="12" height="8" rx="1.5"/><path d="M6.5 9V6a3.5 3.5 0 0 1 7 0v3"/></svg>Change password</a>
-        <button class="danger" type="button"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 17H4.5A1.5 1.5 0 0 1 3 15.5v-11A1.5 1.5 0 0 1 4.5 3H8"/><path d="M13 14l4-4-4-4"/><path d="M17 10H8"/></svg>Log out</button>
+        <a href="10-account.html"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="9" width="12" height="8" rx="1.5"/><path d="M6.5 9V6a3.5 3.5 0 0 1 7 0v3"/></svg>Change password</a>
+        <a href="02-login.html" class="danger"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 17H4.5A1.5 1.5 0 0 1 3 15.5v-11A1.5 1.5 0 0 1 4.5 3H8"/><path d="M13 14l4-4-4-4"/><path d="M17 10H8"/></svg>Log out</a>
       </div>
       <button class="account-row" id="accountToggle" aria-expanded="false">
         <div class="avatar">AR</div>
@@ -128,65 +147,79 @@ input[type=password]:focus{outline:none;border-color:var(--accent);box-shadow:0 
     </div>
 
     <div class="content">
-      <div id="dashboardView">
-        <div class="page-head">
-          <h1>Dashboard</h1>
-          <p class="page-sub">Click the account row in the bottom-left corner to see the gap this mockup closes.</p>
-        </div>
-        <div class="callout">
-          Today, <b>/account/change-password</b> only exists as a forced redirect after an admin-issued reset — there's no link here for a user who just wants to rotate their own password voluntarily. Click the account menu (bottom-left) → "Change password" to see the fix.
-        </div>
+      <div class="page-head">
+        <h1>Notifications</h1>
+        <p class="page-sub">One webhook, fired once when a monitored value crosses into critical — not a full alerting engine.</p>
       </div>
 
-      <div id="pwView" style="display:none;">
-        <div class="page-head">
-          <h1>Change password</h1>
-          <p class="page-sub">Same route (<code>/account/change-password</code>) the forced-reset flow already uses — reused for voluntary rotation, not a new page.</p>
+      <div class="card">
+        <div class="switch-row">
+          <div><div class="sw-label">Webhook notifications</div><div class="sw-sub">Off by default — this is the only outbound network call this app makes</div></div>
+          <div class="toggle off" id="enabledToggle"></div>
         </div>
-        <div class="pw-card">
-          <h2>Set a new password</h2>
-          <p class="lede">Choose a new password for your account.</p>
-          <div class="field"><label>New password</label><input type="password" placeholder="At least 8 characters"></div>
-          <div class="field"><label>Confirm new password</label><input type="password"></div>
-          <button class="btn" id="submitPw">Set password</button>
-          <button class="btn ghost" id="cancelPw">Cancel</button>
+        <div class="field">
+          <label>Webhook URL <span class="hint">— Discord, ntfy, Home Assistant, or anything accepting a plain JSON POST</span></label>
+          <input type="url" id="webhookUrl" placeholder="https://ntfy.sh/your-topic" disabled>
+        </div>
+        <button class="btn" id="saveBtn" disabled>Save</button>
+        <button class="btn ghost" id="testBtn" disabled>Send test</button>
+        <div class="status-line"><span class="dot" style="background:var(--muted);"></span>Never fired</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Triggers</div>
+        <p class="card-hint">Fires once on the transition into critical, not on every poll — a value that stays critical won't re-notify until it clears and re-triggers.</p>
+        <div class="trigger-list">
+          <div class="trigger-row"><span class="trigger-label">CPU temperature <span class="badge crit">≥ 75°C</span></span></div>
+          <div class="trigger-row"><span class="trigger-label">Disk temperature <span class="badge crit">≥ 55°C</span></span></div>
+          <div class="trigger-row"><span class="trigger-label">RAID array <span class="badge crit">degraded</span></span></div>
         </div>
       </div>
     </div>
   </div>
 </div>
-<div class="toast" id="toast"><span class="toast-dot"></span><span id="toastMsg">Password updated</span></div>
+<div class="toast" id="toast"><span class="toast-dot" style="width:7px;height:7px;border-radius:50%;background:var(--good);"></span><span id="toastMsg">Saved</span></div>
 <script>
-const toggle = document.getElementById('accountToggle');
-const menu = document.getElementById('accountMenu');
-toggle.addEventListener('click', () => {
-  const open = menu.classList.toggle('open');
-  toggle.setAttribute('aria-expanded', open);
-});
-document.addEventListener('click', (e) => {
-  if (!e.target.closest('.sidebar-foot')) { menu.classList.remove('open'); toggle.setAttribute('aria-expanded', 'false'); }
+(function(){
+  var toggle = document.getElementById('accountToggle');
+  var menu = document.getElementById('accountMenu');
+  if(!toggle || !menu) return;
+  toggle.addEventListener('click', function(){
+    var open = menu.classList.toggle('open');
+    toggle.setAttribute('aria-expanded', open);
+  });
+  document.addEventListener('click', function(e){
+    if(!e.target.closest('.sidebar-foot')){ menu.classList.remove('open'); toggle.setAttribute('aria-expanded', 'false'); }
+  });
+})();
+
+const enabledToggle = document.getElementById('enabledToggle');
+const webhookUrl = document.getElementById('webhookUrl');
+const saveBtn = document.getElementById('saveBtn');
+const testBtn = document.getElementById('testBtn');
+const toast = document.getElementById('toast');
+const toastMsg = document.getElementById('toastMsg');
+
+function fireToast(msg) {
+  toastMsg.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(window._t);
+  window._t = setTimeout(() => toast.classList.remove('show'), 2600);
+}
+
+enabledToggle.addEventListener('click', () => {
+  const on = enabledToggle.classList.toggle('off') === false;
+  webhookUrl.disabled = !on;
+  saveBtn.disabled = !on;
+  testBtn.disabled = !on || !webhookUrl.value;
 });
 
-const dashboardView = document.getElementById('dashboardView');
-const pwView = document.getElementById('pwView');
-document.getElementById('menuChangePw').addEventListener('click', (e) => {
-  e.preventDefault();
-  menu.classList.remove('open');
-  toggle.setAttribute('aria-expanded', 'false');
-  dashboardView.style.display = 'none';
-  pwView.style.display = '';
+webhookUrl.addEventListener('input', () => {
+  testBtn.disabled = enabledToggle.classList.contains('off') || !webhookUrl.value;
 });
-document.getElementById('cancelPw').addEventListener('click', () => {
-  pwView.style.display = 'none';
-  dashboardView.style.display = '';
-});
-document.getElementById('submitPw').addEventListener('click', () => {
-  pwView.style.display = 'none';
-  dashboardView.style.display = '';
-  const toast = document.getElementById('toast');
-  toast.classList.add('show');
-  setTimeout(() => toast.classList.remove('show'), 2600);
-});
+
+saveBtn.addEventListener('click', () => fireToast('Notification settings saved'));
+testBtn.addEventListener('click', () => fireToast('Test notification sent'));
 </script>
 </body>
 </html>

@@ -68,7 +68,8 @@ footer{color:var(--muted);font-size:13px;border-top:1px solid var(--border);padd
   .flow li:nth-child(5){animation-delay:.28s} .flow li:nth-child(6){animation-delay:.32s}
   .flow li:nth-child(7){animation-delay:.36s} .flow li:nth-child(8){animation-delay:.40s}
   .flow li:nth-child(9){animation-delay:.44s} .flow li:nth-child(10){animation-delay:.48s}
-  .flow li:nth-child(11){animation-delay:.52s}
+  .flow li:nth-child(11){animation-delay:.52s} .flow li:nth-child(12){animation-delay:.56s}
+  .flow li:nth-child(13){animation-delay:.60s}
 }
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 </style>
@@ -137,6 +138,16 @@ footer{color:var(--muted);font-size:13px;border-top:1px solid var(--border);padd
       <span class="num">11</span>
       <span><span class="flow-title">Dashboard — customize layout</span><div class="flow-desc">Drag-and-drop reorder of the dashboard card grid, same interaction as the OLED screen list. Planned for v0.7.0.</div></span>
       <span class="flow-tag">all roles · v0.7.0</span>
+    </a></li>
+    <li><a href="12-logs.html">
+      <span class="num">12</span>
+      <span><span class="flow-title">Logs</span><div class="flow-desc">Read-only live tail of the daemon's journal — today the only way to see it is SSH. Planned for v0.7.0.</div></span>
+      <span class="flow-tag">admin only · v0.7.0</span>
+    </a></li>
+    <li><a href="13-notifications.html">
+      <span class="num">13</span>
+      <span><span class="flow-title">Notifications</span><div class="flow-desc">One webhook, fired on a transition into critical (temp, RAID degraded) — this app's first outbound network call. Planned for v0.7.0.</div></span>
+      <span class="flow-tag">admin only · v0.7.0</span>
     </a></li>
   </ul>
 

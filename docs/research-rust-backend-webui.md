@@ -821,6 +821,56 @@ either directly conflict with an existing deliberate decision (W§3.3 Tier
 already got ruled out. Layout customization is the one RPi-Monitor
 feature that's both cheap and doesn't carry either problem.
 
+### 3.8 Second comparison pass: Cockpit, Glances, Netdata
+
+Same exercise as §3.6/§3.7, against three more established tools in
+adjacent niches: Cockpit (systemd-native Linux admin console), Glances
+(cross-platform terminal+web monitor), Netdata (per-second metrics +
+alerting). Most of what they offer maps onto ground already covered —
+either already decided against or already scoped:
+
+- Cockpit's in-browser terminal, VM/container management, multi-host
+  switching — all expand this app's surface past "case controller" the
+  same way §3.3 Tier 3 already ruled out container management and network
+  topology. A shell-in-the-browser specifically is a new attack surface
+  this app has no business taking on.
+- Glances' Docker/Podman container stats, InfluxDB/Elasticsearch/
+  Cassandra export — the export options directly conflict with §3.3 Tier
+  3's historical-time-series decision (SD-card wear); container stats is
+  the same "not this app's job" case as Cockpit's.
+- Netdata's 800+ integration collectors, per-second granularity — this
+  app already knows its metric surface (§3.2, §3.3 Tier 1/2); per-second
+  polling on a Pi monitoring itself is the "no polling that hammers
+  `/proc` every 200ms" constraint §3.1 already ruled out.
+
+Two things weren't already covered:
+
+**System log viewer**, from Cockpit's "Logs" module. There's currently no
+way to see the daemon's own logs from the web UI — the only path is SSH +
+`journalctl -u argonone-rs`. Real gap for a headless appliance, and it
+gets more relevant, not less, once A§3.5's read-only-rootfs diagnostic
+message ships (v0.7.0) — anyone who can't SSH in would never see that
+message otherwise, though a daemon that fails to *start* obviously can't
+serve its own log page either; this covers every other runtime issue
+(fan-curve decisions, RTC wake/sleep events, service errors) which is
+the actual common case. Cheap to build: shell out to `journalctl` the
+same way `sysinfo` already shells out to `smartctl`/`df` (§1.2), admin-
+only, read-only, no new persistence. Mocked at `docs/mockups/12-logs.html`.
+
+**Critical-state webhook notification**, reinforced by Netdata's alert
+model (clear/warning/critical severity with hysteresis to avoid
+notification-flapping) — which is exactly the shape `web/storage.rs`'s
+`temp_severity` and the RAID `degraded` state already compute, just never
+acted on beyond coloring a badge. Not Netdata's full Slack/PagerDuty/
+Twilio/Opsgenie integration matrix — one configurable webhook URL, POSTed
+once on a transition into `crit` (Discord, ntfy, and Home Assistant all
+accept a plain JSON POST, covering the realistic self-hoster audience
+from §3.1 without building channel-specific integrations). This is the
+first outbound network call this app would ever make — worth being
+deliberate about (opt-in, one URL, fires only on state *transitions* not
+every poll) rather than treating it as a two-line addition. Mocked at
+`docs/mockups/13-notifications.html`.
+
 ## 4. Migration/compat notes
 
 - Keep config file paths and formats identical (`/etc/argononed.conf`,
