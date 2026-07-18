@@ -397,6 +397,20 @@ fn parse_uptime_secs(raw: &str) -> Option<u64> {
     Some(seconds as u64)
 }
 
+/// The machine's configured hostname (e.g. `rpi01`), from the kernel
+/// rather than `/etc/hostname` — reflects what's actually live even if a
+/// runtime `sethostname()` diverged from the config file, matching what
+/// the `hostname` command itself reports.
+pub fn read_hostname() -> Option<String> {
+    let raw = fs::read_to_string("/proc/sys/kernel/hostname").ok()?;
+    parse_hostname(&raw)
+}
+
+fn parse_hostname(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
 pub fn read_local_ip() -> Option<std::net::IpAddr> {
     let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
     socket.connect("8.8.8.8:80").ok()?;
@@ -443,6 +457,16 @@ mod tests {
     #[test]
     fn parse_uptime_secs_rejects_garbage() {
         assert_eq!(parse_uptime_secs("not-a-number"), None);
+    }
+
+    #[test]
+    fn parse_hostname_trims_trailing_newline() {
+        assert_eq!(parse_hostname("rpi01\n"), Some("rpi01".to_string()));
+    }
+
+    #[test]
+    fn parse_hostname_rejects_empty() {
+        assert_eq!(parse_hostname("\n"), None);
     }
 
     #[test]

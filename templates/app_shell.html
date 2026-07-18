@@ -4,7 +4,10 @@
   <aside class="sidebar">
     <div class="brand">
       <div class="brand-mark">A</div>
-      <div class="brand-name">argonone</div>
+      <div>
+        <div class="brand-name">argonone</div>
+        <div class="brand-host" id="brand-host"></div>
+      </div>
     </div>
     <nav>
       <a href="/" class="{% if active_page == 'dashboard' %}active{% endif %}">Dashboard</a>
@@ -80,6 +83,8 @@ document.body.addEventListener('htmx:wsAfterMessage', function (evt) {
     document.getElementById('stat-uptime').textContent = formatUptime(data.uptime_secs);
   } else if (data.type === 'fan_state') {
     document.getElementById('stat-fan-pct').textContent = data.current_pct + '%';
+  } else if (data.type === 'host') {
+    document.getElementById('brand-host').textContent = data.hostname || '';
   }
 });
 </script>

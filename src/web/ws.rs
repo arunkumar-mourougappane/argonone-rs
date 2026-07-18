@@ -17,6 +17,19 @@ async fn stream(mut socket: WebSocket, state: AppState) {
     let mut interval = tokio::time::interval(super::WS_TICK_INTERVAL);
     let mut oled_screen_rx = state.oled_screen.clone();
 
+    // Hostname never changes at runtime, unlike the other `stats` fields
+    // — one-shot on connect rather than re-reading it every tick.
+    {
+        let host = json!({ "type": "host", "hostname": crate::sysinfo::read_hostname() });
+        if socket
+            .send(Message::Text(host.to_string().into()))
+            .await
+            .is_err()
+        {
+            return;
+        }
+    }
+
     // Send the currently-selected screen right away (v0.5.0's live OLED
     // preview, W§2.5) rather than making a freshly-connected client wait
     // for the next rotation to learn what's already showing.
