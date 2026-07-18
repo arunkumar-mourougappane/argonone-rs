@@ -298,6 +298,14 @@ Turns "a binary that works" into "a thing someone installs."
 - Install docs verified against real Ubuntu 26.04-on-Pi hardware — several
   claims in A§4.3 are flagged "needs hardware verification, not assumed";
   this is where that verification actually has to happen before shipping
+- Read-only-rootfs startup failure gets a diagnosable error (A§3.5, found
+  comparing against RPi-Monitor's read-only-root support): if
+  `/var/lib/argonone-rs` isn't writable, detect that specific failure and
+  log what's actually wrong and how to fix it, instead of surfacing a raw
+  `sqlx::Error`. Not full read-only-rootfs support (degrading writes
+  gracefully) — that cuts against the SQLite-is-sole-source-of-truth
+  design (A§1–§3) and isn't scoped here, just a clearer failure mode for
+  the one that already happens today.
 
 ---
 

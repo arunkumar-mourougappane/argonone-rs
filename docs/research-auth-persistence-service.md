@@ -300,6 +300,34 @@ elsewhere in this doc, not a hypothetical:
   (frequent small writes) vs. recoverability of *all* data (infrequent
   full copies). Both are real, neither substitutes for the other.
 
+### 3.5 Read-only rootfs: detect and fail loudly, not silently
+
+Gap found comparing against RPi-Monitor (the established prior art in this
+exact niche — Perl daemon + RRD, `github.com/XavierBerger/RPi-Monitor`),
+which explicitly supports running against a **read-only root filesystem**
+— a real, increasingly common Pi hardening/longevity setup (overlayfs root,
+SD card mounted read-only, writes redirected to tmpfs or nowhere).
+argonone-rs's entire persistence model (§3.2 above) assumes a writable
+`/var/lib/argonone-rs` — reasonable as the *primary* supported mode, this
+project's "SQLite is the sole source of truth" design (§1–§3) is a
+deliberate choice RPi-Monitor's RRD-plus-config-file model didn't have to
+make. Full parity (monitoring continues, all writes degrade gracefully) is
+real scope that cuts against that design and isn't being proposed here.
+
+What's missing isn't the capability, it's the *failure mode*: today, if
+`/var/lib/argonone-rs` isn't writable, `crate::db::connect` returns
+whatever raw `sqlx::Error` SQLite produces (`service.rs`'s `run()`, which
+logs it via `tracing::error!` and exits) — accurate, but not actionable.
+Someone hitting this on a hardened image sees a generic I/O error, not
+"this daemon needs a writable state directory." Cheap, worth doing
+regardless of whether broader read-only support ever happens: detect this
+specific failure at startup (the DB path's parent directory isn't
+writable, or the open fails with a permissions-shaped error) and log a
+message that names the actual constraint and points at the fix (mount
+`/var/lib/argonone-rs` read-write, or don't run this daemon on a
+read-only-root image). No new capability, no schema/architecture change —
+just turning a silent/confusing failure into a diagnosable one.
+
 ## 4. Running as a systemd service with the right privileges (Ubuntu 26.04 / Raspberry Pi)
 
 ### 4.1 Does a new Linux account need to be created?
