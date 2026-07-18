@@ -306,6 +306,13 @@ Turns "a binary that works" into "a thing someone installs."
   gracefully) — that cuts against the SQLite-is-sole-source-of-truth
   design (A§1–§3) and isn't scoped here, just a clearer failure mode for
   the one that already happens today.
+- Customizable dashboard card layout (W§3.7, also found comparing against
+  RPi-Monitor): drag-and-drop reorder of the dashboard's card grid (Fan,
+  Power & RTC, Network, Storage, Display, System, Signed in as), same
+  interaction the OLED screen-rotation list already shipped in v0.5.0.
+  New `settings` key (`dashboard_layout`), `GET/PUT` following the
+  existing DB-backed-with-fallback-default pattern — no new architecture.
+  Mocked at `docs/mockups/11-dashboard-reorder.html`.
 
 ---
 

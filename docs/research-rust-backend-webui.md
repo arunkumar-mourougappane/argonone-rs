@@ -790,6 +790,37 @@ Both are small enough to land inside v0.6.0 (W§ROADMAP) rather than
 warranting their own milestone — the audit viewer in particular closes a
 gap the RBAC story itself created, not a nice-to-have.
 
+### 3.7 Customizable dashboard layout, via RPi-Monitor comparison
+
+RPi-Monitor (`github.com/XavierBerger/RPi-Monitor`) — the established
+prior art in this exact niche, already cited in §3.6's read-only-rootfs
+finding — lets users drag-and-drop reorder its status page. Checked
+whether that's worth doing here: the dashboard (§3.3, v0.6.0's data-
+surface work) already renders as a card grid (`03-dashboard.html`: Fan,
+Power & RTC, Network, Storage, Display, System, Signed in as), so this
+isn't "build a new capability," it's "let the operator pick which of
+those cards they actually care about seeing first" — a household running
+this as a NAS cares about Storage more than Display; one running it
+headless in a closet cares about neither as much as Power & RTC.
+
+Scope is small and follows precedent already in the codebase: the OLED
+screen-rotation list (`templates/oled.html`) is exactly this same
+drag-and-drop-to-reorder interaction, already shipped in v0.5.0. Backend
+side: one more `settings` key (`dashboard_layout`, an ordered array of
+card keys), `GET/PUT` following the same DB-backed-with-fallback-default
+pattern as fan curves/OLED config/RTC schedule — no new architecture.
+Mocked at `docs/mockups/11-dashboard-reorder.html` (an edit-mode overlay
+on the existing dashboard mockup: grip handles, drag-to-reorder, reset-
+to-default, save toast).
+
+Not pulling in the rest of RPi-Monitor's comparison (RRD history,
+email/SMS alerting, SNMP) — those were checked in the same pass and
+either directly conflict with an existing deliberate decision (W§3.3 Tier
+3 rules out historical time-series) or expand this app's surface past
+"case controller" the same way container management/network topology
+already got ruled out. Layout customization is the one RPi-Monitor
+feature that's both cheap and doesn't carry either problem.
+
 ## 4. Migration/compat notes
 
 - Keep config file paths and formats identical (`/etc/argononed.conf`,
