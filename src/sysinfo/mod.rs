@@ -191,6 +191,12 @@ pub fn filesystem_belongs_to_device(filesystem: &str, device: &str) -> bool {
 pub struct RaidDevice {
     pub name: String,
     pub spare: bool,
+    /// `mdstat` marks a failed/kicked member with `(F)` — distinct from
+    /// `(S)` (spare): a failed device is a working member gone bad, not
+    /// standing by. Conflating the two by only tracking `spare` would
+    /// report a failed disk as "active sync", the opposite of what an
+    /// operator needs to see.
+    pub failed: bool,
 }
 
 /// A `/proc/mdstat` array entry, parsed from its two-line record — the
@@ -248,6 +254,7 @@ fn parse_raid_status(contents: &str) -> Vec<RaidArray> {
             .map(|tok| RaidDevice {
                 name: tok.split('[').next().unwrap_or(tok).to_string(),
                 spare: tok.contains("(S)"),
+                failed: tok.contains("(F)"),
             })
             .collect();
 
@@ -803,11 +810,13 @@ mod tests {
             vec![
                 RaidDevice {
                     name: "sda1".to_string(),
-                    spare: false
+                    spare: false,
+                    failed: false,
                 },
                 RaidDevice {
                     name: "sdb1".to_string(),
-                    spare: false
+                    spare: false,
+                    failed: false,
                 },
             ]
         );
@@ -826,6 +835,19 @@ mod tests {
         let mdstat = "md0 : active raid1 sda1[0] sdb1[1] sdc1[2](S)\n      1000000 blocks super 1.2 [2/2] [UU]\n";
         let arrays = parse_raid_status(mdstat);
         assert_eq!(arrays[0].spare_disks(), 1);
+    }
+
+    #[test]
+    fn parse_raid_status_marks_failed_members_distinctly_from_spares() {
+        let mdstat =
+            "md0 : active raid1 sda1[0] sdb1[1](F)\n      1000000 blocks super 1.2 [2/1] [U_]\n";
+        let arrays = parse_raid_status(mdstat);
+        let sdb1 = arrays[0].devices.iter().find(|d| d.name == "sdb1").unwrap();
+        assert!(sdb1.failed, "(F)-marked member must be reported as failed");
+        assert!(
+            !sdb1.spare,
+            "a failed member is not a spare — the two markers are mutually exclusive"
+        );
     }
 
     #[test]

@@ -18,6 +18,7 @@
 .devgrid{display:flex;gap:8px;flex-wrap:wrap;}
 .devchip{font-family:var(--font-mono);font-size:11.5px;padding:6px 11px;border-radius:7px;background:var(--good-soft);color:var(--good);font-weight:600;transition:transform .15s ease, box-shadow .15s ease;}
 .devchip.spare{background:var(--panel-2);color:var(--muted);}
+.devchip.crit{background:var(--crit-soft);color:var(--crit);}
 .devchip:hover{transform:translateY(-1px);}
 table.disks{width:100%;border-collapse:collapse;font-size:13px;}
 table.disks th{text-align:left;font-family:var(--font-mono);font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600;padding:0 12px 10px;border-bottom:1px solid var(--border);}
@@ -64,7 +65,7 @@ table.disks tbody tr:hover{background:var(--panel-2);}
     <div class="rm-item"><div class="rm-label">Spare</div><div class="rm-value">{{ a.spare_disks }}</div></div>
   </div>
   <div class="devgrid">
-    {% for d in a.devices %}<span class="devchip {% if d.role == 'spare' %}spare{% endif %}">{{ d.name }} — {{ d.role }}</span>{% endfor %}
+    {% for d in a.devices %}<span class="devchip {{ d.role_severity }}">{{ d.name }} — {{ d.role }}</span>{% endfor %}
   </div>
 </div>
 {% endfor %}

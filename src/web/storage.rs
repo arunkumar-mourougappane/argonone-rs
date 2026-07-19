@@ -37,6 +37,20 @@ fn temp_severity(celsius: f32) -> &'static str {
     }
 }
 
+/// A RAID member's display label and devchip severity. `mdstat`'s `(F)`
+/// (failed/kicked) and `(S)` (spare) markers are mutually exclusive and
+/// mean opposite things — a failed member is a working device gone bad,
+/// not one standing by — so `failed` is checked first and wins.
+fn raid_device_role(failed: bool, spare: bool) -> (&'static str, &'static str) {
+    if failed {
+        ("faulty", "crit")
+    } else if spare {
+        ("spare", "spare")
+    } else {
+        ("active sync", "good")
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct DiskRow {
     name: String,
@@ -58,9 +72,10 @@ struct DiskRow {
 #[derive(Debug, Serialize)]
 struct RaidDeviceRow {
     name: String,
-    /// "active sync" or "spare" — matches `05-storage-raid.html`'s
+    /// "active sync", "spare", or "faulty" — matches `05-storage-raid.html`'s
     /// devchip label (`mdstat`'s own vocabulary for a member's role).
     role: &'static str,
+    role_severity: &'static str,
 }
 
 #[derive(Debug, Serialize)]
@@ -150,9 +165,13 @@ pub async fn page(auth_session: AuthSession, State(state): State<AppState>) -> R
             devices: a
                 .devices
                 .iter()
-                .map(|d| RaidDeviceRow {
-                    name: d.name.clone(),
-                    role: if d.spare { "spare" } else { "active sync" },
+                .map(|d| {
+                    let (role, role_severity) = raid_device_role(d.failed, d.spare);
+                    RaidDeviceRow {
+                        name: d.name.clone(),
+                        role,
+                        role_severity,
+                    }
                 })
                 .collect(),
         })
@@ -195,5 +214,18 @@ mod tests {
         assert_eq!(temp_severity(54.9), "warn");
         assert_eq!(temp_severity(55.0), "crit");
         assert_eq!(temp_severity(80.0), "crit");
+    }
+
+    #[test]
+    fn raid_device_role_reports_failed_members_distinctly_from_active_and_spare() {
+        assert_eq!(raid_device_role(false, false), ("active sync", "good"));
+        assert_eq!(raid_device_role(false, true), ("spare", "spare"));
+        // A failed member must never render as "active sync" — this is
+        // the bug: a `(F)`-marked device used to only be checked against
+        // `spare`, so it fell into the "active sync" branch by default.
+        assert_eq!(raid_device_role(true, false), ("faulty", "crit"));
+        // `failed` wins if a real-world `mdstat` line somehow carried
+        // both markers — a device gone bad is never a standby spare.
+        assert_eq!(raid_device_role(true, true), ("faulty", "crit"));
     }
 }
