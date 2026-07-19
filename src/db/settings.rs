@@ -5,7 +5,8 @@
 //! each growing a dedicated table.
 
 use super::DbPool;
-use crate::config::{ConfigPaths, OledConfig, RtcSchedule, TempUnit};
+use crate::config::{ConfigPaths, HttpsConfig, OledConfig, RtcSchedule, TempUnit};
+use rand::distr::{Alphanumeric, SampleString};
 use std::path::Path;
 
 pub async fn load_units(pool: &DbPool) -> TempUnit {
@@ -104,6 +105,101 @@ pub async fn save_oled_config(
     Ok(())
 }
 
+/// Falls back to [`HttpsConfig::disabled`] (plain HTTP) when nothing's
+/// been configured yet — matches every other DB-backed setting's
+/// fallback-to-default pattern.
+pub async fn load_https_config(pool: &DbPool) -> HttpsConfig {
+    let value: Option<String> =
+        sqlx::query_scalar("SELECT value FROM settings WHERE key = 'https_config'")
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+    value
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .unwrap_or_else(HttpsConfig::disabled)
+}
+
+pub async fn save_https_config(
+    pool: &DbPool,
+    config: &HttpsConfig,
+    updated_by: i64,
+) -> Result<(), sqlx::Error> {
+    let value = serde_json::to_string(config).expect("HttpsConfig always serializes");
+    sqlx::query(
+        "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('https_config', ?1, datetime('now'), ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+    )
+    .bind(value)
+    .bind(updated_by)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// The learned IR remote code (v0.6.0, W§3.2), stored as its hex-string
+/// form. `None` when nothing's been learned yet.
+pub async fn load_ir_code(pool: &DbPool) -> Option<u32> {
+    let value: Option<String> =
+        sqlx::query_scalar("SELECT value FROM settings WHERE key = 'ir_code'")
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+    value.and_then(|hex| u32::from_str_radix(hex.trim_start_matches("0x"), 16).ok())
+}
+
+pub async fn save_ir_code(pool: &DbPool, code: u32, updated_by: i64) -> Result<(), sqlx::Error> {
+    let value = format!("{code:08X}");
+    sqlx::query(
+        "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('ir_code', ?1, datetime('now'), ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+    )
+    .bind(value)
+    .bind(updated_by)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Generates a fresh setup-exposure token and stores it, overwriting any
+/// prior value — called once at boot while `users` is still empty (A§1.1's
+/// "print a one-time setup token" recommendation, closing the "first
+/// request wins" window on shared networks). A new token every restart
+/// means a token printed to a since-rotated log is simply stale, not a
+/// standing credential.
+pub async fn generate_and_store_setup_token(pool: &DbPool) -> String {
+    let token = Alphanumeric.sample_string(&mut rand::rng(), 24);
+    let _ = sqlx::query(
+        "INSERT INTO settings (key, value, updated_at) VALUES ('setup_token', ?1, datetime('now'))
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+    )
+    .bind(&token)
+    .execute(pool)
+    .await;
+    token
+}
+
+pub async fn current_setup_token(pool: &DbPool) -> Option<String> {
+    sqlx::query_scalar("SELECT value FROM settings WHERE key = 'setup_token'")
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+}
+
+/// Consumes the token once the real admin account is claimed, in the same
+/// transaction as that insert — a losing racer's request can no longer
+/// present a still-valid token after the winner commits.
+pub async fn clear_setup_token(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM settings WHERE key = 'setup_token'")
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -194,5 +290,52 @@ mod tests {
         };
         save_oled_config(&pool, &cfg, user_id).await.unwrap();
         assert_eq!(load_oled_config(&pool).await, cfg);
+    }
+
+    #[tokio::test]
+    async fn load_ir_code_defaults_to_none_when_unset() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = crate::db::connect(&dir.path().join("t.db")).await.unwrap();
+        assert_eq!(load_ir_code(&pool).await, None);
+    }
+
+    #[tokio::test]
+    async fn save_then_load_ir_code_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = crate::db::connect(&dir.path().join("t.db")).await.unwrap();
+        let user_id = seed_user(&pool).await;
+        save_ir_code(&pool, 0x20DF10EF, user_id).await.unwrap();
+        assert_eq!(load_ir_code(&pool).await, Some(0x20DF10EF));
+    }
+
+    #[tokio::test]
+    async fn save_ir_code_twice_overwrites_rather_than_erroring() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = crate::db::connect(&dir.path().join("t.db")).await.unwrap();
+        let user_id = seed_user(&pool).await;
+        save_ir_code(&pool, 0x1111_1111, user_id).await.unwrap();
+        save_ir_code(&pool, 0x2222_2222, user_id).await.unwrap();
+        assert_eq!(load_ir_code(&pool).await, Some(0x2222_2222));
+    }
+
+    #[tokio::test]
+    async fn load_https_config_defaults_to_disabled_when_unset() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = crate::db::connect(&dir.path().join("t.db")).await.unwrap();
+        assert_eq!(load_https_config(&pool).await, HttpsConfig::disabled());
+    }
+
+    #[tokio::test]
+    async fn save_then_load_https_config_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = crate::db::connect(&dir.path().join("t.db")).await.unwrap();
+        let user_id = seed_user(&pool).await;
+        let config = HttpsConfig {
+            mode: crate::config::HttpsMode::Tailscale,
+            domain: Some("myhost.tailnet-name.ts.net".to_string()),
+            email: None,
+        };
+        save_https_config(&pool, &config, user_id).await.unwrap();
+        assert_eq!(load_https_config(&pool).await, config);
     }
 }

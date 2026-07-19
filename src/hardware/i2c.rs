@@ -12,6 +12,17 @@ const FAN_ADDR: u16 = 0x1a;
 const REG_DUTY_CYCLE: u8 = 0x80;
 const REG_CTRL: u8 = 0x86;
 const CTRL_POWEROFF: u8 = 0x01;
+/// See [`crate::hardware::FanBackend::learn_ir_code`] — documented only as
+/// "IR code (block write)"; the 4-byte width and trigger sequence below
+/// are this crate's best-effort reconstruction, unverified against real
+/// hardware.
+const REG_IR_CODE: u8 = 0x82;
+const IR_CODE_LEN: u8 = 4;
+/// How long to give the case's own IR receiver to catch a button press
+/// before giving up — matches the timing the reference UI mockup
+/// (`docs/mockups/08-system-settings.html`) uses for its "Listening…"
+/// state.
+const IR_LEARN_WINDOW: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// Sentinel written to `REG_DUTY_CYCLE` and read back to confirm the
 /// firmware actually implements registers rather than treating every
@@ -98,5 +109,37 @@ impl FanBackend for I2cFan {
                 .map_err(|e| HwError::Bus(format!("writing legacy poweroff byte: {e}"))),
             FanCapability::None => Ok(()),
         }
+    }
+
+    fn learn_ir_code(&self) -> HwResult<Option<u32>> {
+        if self.capability != FanCapability::Registers {
+            // Legacy raw-byte firmware has no documented register
+            // interface for this at all — nothing to attempt.
+            return Ok(None);
+        }
+        {
+            let mut dev = self.dev.lock().expect("I2C fan mutex poisoned");
+            dev.smbus_write_i2c_block_data(REG_IR_CODE, &[0; IR_CODE_LEN as usize])
+                .map_err(|e| HwError::Bus(format!("starting IR learn window: {e}")))?;
+        }
+        std::thread::sleep(IR_LEARN_WINDOW);
+        let mut dev = self.dev.lock().expect("I2C fan mutex poisoned");
+        let bytes = dev
+            .smbus_read_i2c_block_data(REG_IR_CODE, IR_CODE_LEN)
+            .map_err(|e| HwError::Bus(format!("reading learned IR code: {e}")))?;
+        if bytes.len() != IR_CODE_LEN as usize {
+            return Ok(None);
+        }
+        let code = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        Ok((code != 0).then_some(code))
+    }
+
+    fn program_ir_code(&self, code: u32) -> HwResult<()> {
+        if self.capability != FanCapability::Registers {
+            return Ok(());
+        }
+        let mut dev = self.dev.lock().expect("I2C fan mutex poisoned");
+        dev.smbus_write_i2c_block_data(REG_IR_CODE, &code.to_be_bytes())
+            .map_err(|e| HwError::Bus(format!("writing IR code: {e}")))
     }
 }

@@ -63,6 +63,27 @@ pub trait FanBackend: Send + Sync {
     /// Tell the case's MCU that the Pi is powering off (so it can cut power
     /// once the OS has finished shutting down).
     fn signal_poweroff(&self) -> HwResult<()>;
+
+    /// Puts the case MCU's own IR receiver into a listen window and
+    /// returns whatever code it captured (`None` if nothing was captured
+    /// in time), so the case responds to a remote's power button
+    /// (v0.6.0, W§3.2's IR remote config page).
+    ///
+    /// **Unverified against real hardware.** The only documentation this
+    /// crate has for I2C register `0x82` is one line — "IR code (block
+    /// write)" — with no confirmed trigger sequence or code width. This
+    /// implementation is a best-effort reconstruction (a zeroed block
+    /// write to start the window, then a block read of the same register
+    /// for the result) pending confirmation on a real Argon ONE/EON
+    /// board, the same bar every other hardware claim in this codebase is
+    /// held to before being called settled.
+    fn learn_ir_code(&self) -> HwResult<Option<u32>>;
+
+    /// Re-writes a previously-learned code (e.g. restoring one read back
+    /// from the DB after a restart, in case the MCU doesn't retain it
+    /// itself across a power cycle). Same unverified-protocol caveat as
+    /// [`FanBackend::learn_ir_code`].
+    fn program_ir_code(&self, code: u32) -> HwResult<()>;
 }
 
 /// A power-button pulse-width event, as decoded from the GPIO monitor
@@ -134,7 +155,11 @@ pub trait RtcBackend: Send + Sync {
 /// Bundles the hardware seams the daemon needs. Built once at startup via
 /// [`detect`].
 pub struct HardwareBackend {
-    pub fan: Box<dyn FanBackend>,
+    /// `Arc`, not `Box` — the fan control loop and the web layer's IR
+    /// remote endpoints (v0.6.0) both need a handle to the same backend,
+    /// and every `FanBackend` method takes `&self` so sharing it needs no
+    /// extra synchronization beyond what `I2cFan` already does internally.
+    pub fan: std::sync::Arc<dyn FanBackend>,
     pub button: Box<dyn PowerButtonBackend>,
     pub oled: Box<dyn OledBackend>,
     pub rtc: Box<dyn RtcBackend>,
@@ -148,21 +173,21 @@ pub fn detect() -> HardwareBackend {
     #[cfg(target_os = "linux")]
     {
         let mut fan_present = false;
-        let fan: Box<dyn FanBackend> = match i2c::I2cFan::detect() {
+        let fan: std::sync::Arc<dyn FanBackend> = match i2c::I2cFan::detect() {
             Ok(Some(fan)) => {
                 tracing::info!(capability = ?fan.capability(), "fan controller detected on I2C bus");
                 fan_present = true;
-                Box::new(fan)
+                std::sync::Arc::new(fan)
             }
             Ok(None) => {
                 tracing::warn!(
                     "no Argon fan controller found on I2C bus 1 (addr 0x1a) — running with no-op fan backend"
                 );
-                Box::new(noop::NoopFan)
+                std::sync::Arc::new(noop::NoopFan)
             }
             Err(e) => {
                 tracing::warn!(error = %e, "I2C bus unavailable — running with no-op fan backend");
-                Box::new(noop::NoopFan)
+                std::sync::Arc::new(noop::NoopFan)
             }
         };
 
@@ -214,7 +239,7 @@ pub fn detect() -> HardwareBackend {
     {
         tracing::warn!("non-Linux platform — hardware backends are no-op");
         HardwareBackend {
-            fan: Box::new(noop::NoopFan),
+            fan: std::sync::Arc::new(noop::NoopFan),
             button: Box::new(noop::NoopPowerButton),
             oled: Box::new(noop::NoopOled),
             rtc: Box::new(noop::NoopRtc),

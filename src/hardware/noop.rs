@@ -21,6 +21,14 @@ impl FanBackend for NoopFan {
     fn signal_poweroff(&self) -> HwResult<()> {
         Ok(())
     }
+
+    fn learn_ir_code(&self) -> HwResult<Option<u32>> {
+        Ok(None)
+    }
+
+    fn program_ir_code(&self, _code: u32) -> HwResult<()> {
+        Ok(())
+    }
 }
 
 pub struct NoopPowerButton;

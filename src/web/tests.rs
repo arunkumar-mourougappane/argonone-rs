@@ -41,6 +41,8 @@ async fn test_router_with_board(
         rtc_schedule_tx,
         oled_config_tx,
         oled_screen_rx,
+        std::sync::Arc::new(crate::hardware::noop::NoopFan),
+        crate::config::HttpsMode::Off,
     )
     .await;
     (router, pool)
@@ -80,24 +82,40 @@ fn json_request(method: &str, uri: &str, body: &str, cookie: &str) -> Request<Bo
         .unwrap()
 }
 
+/// Fetches the one-time setup token `build_router` generated (v0.6.0's
+/// exposure-window guard, A§1.1) so tests can drive `/setup` the same way
+/// a real installer would, rather than bypassing the check.
+async fn setup_token(pool: &crate::db::DbPool) -> String {
+    crate::db::settings::current_setup_token(pool)
+        .await
+        .expect("build_router should have generated a setup token")
+}
+
 /// Seeds an admin (so setup is already complete) plus a second user with
-/// `role`, and returns that second user's session cookie.
+/// `role`, and returns that second user's session cookie. Callable more
+/// than once against the same router/pool (several tests do, to add
+/// multiple non-admin users) — the token is only present pre-setup, so a
+/// later call with none left just skips straight to seeding the user.
 async fn seed_and_login(
     router: &Router,
     pool: &crate::db::DbPool,
     username: &str,
     role: &str,
 ) -> String {
-    router
-        .clone()
-        .oneshot(form_request(
-            "POST",
-            "/setup",
-            "username=admin&password=correcthorsebatterystaple&password_confirm=correcthorsebatterystaple",
-            None,
-        ))
-        .await
-        .unwrap();
+    if let Some(token) = crate::db::settings::current_setup_token(pool).await {
+        router
+            .clone()
+            .oneshot(form_request(
+                "POST",
+                "/setup",
+                &format!(
+                    "username=admin&password=correcthorsebatterystaple&password_confirm=correcthorsebatterystaple&token={token}"
+                ),
+                None,
+            ))
+            .await
+            .unwrap();
+    }
 
     sqlx::query("INSERT INTO users (username, password_hash, role) VALUES (?1, ?2, ?3)")
         .bind(username)
@@ -134,14 +152,17 @@ async fn root_redirects_to_setup_before_first_admin_exists() {
 
 #[tokio::test]
 async fn full_setup_login_dashboard_flow() {
-    let (router, _pool) = test_router().await;
+    let (router, pool) = test_router().await;
+    let token = setup_token(&pool).await;
 
     let setup_resp = router
         .clone()
         .oneshot(form_request(
             "POST",
             "/setup",
-            "username=admin&password=correcthorsebatterystaple&password_confirm=correcthorsebatterystaple",
+            &format!(
+                "username=admin&password=correcthorsebatterystaple&password_confirm=correcthorsebatterystaple&token={token}"
+            ),
             None,
         ))
         .await
@@ -181,25 +202,65 @@ async fn full_setup_login_dashboard_flow() {
         .await
         .unwrap()
         .to_bytes();
-    assert!(String::from_utf8_lossy(&body).contains("Welcome, admin"));
+    let dashboard_html = String::from_utf8_lossy(&body);
+    assert!(dashboard_html.contains("@admin"));
+    assert!(
+        !dashboard_html.contains("internal error rendering"),
+        "dashboard.html failed to render: {dashboard_html}"
+    );
+    assert!(dashboard_html.contains("sysLoadAvg"));
+    assert!(dashboard_html.contains("Storage"));
+    assert!(dashboard_html.contains("Signed in as"));
+}
+
+/// Sidebar structure (nav icons, brand mark, account dropdown) matching
+/// the mockups — `accountToggle`/`accountMenu` is the collapsible
+/// avatar+dropdown (`03-dashboard.html`'s `.account-row`/`.account-menu`
+/// pattern), not the plain always-visible link this replaced.
+#[tokio::test]
+async fn sidebar_matches_mockup_structure() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "admin1", "admin").await;
+
+    let resp = router
+        .clone()
+        .oneshot(empty_request("GET", "/", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let html = String::from_utf8_lossy(&body);
+    assert!(html.contains(">Ar</div>"), "brand mark should be 'Ar'");
+    assert!(html.contains("accountToggle"));
+    assert!(html.contains("accountMenu"));
+    assert!(html.contains("<svg"), "nav links should carry icons");
+    assert!(html.contains("class=\"divider\""));
 }
 
 #[tokio::test]
 async fn second_setup_submission_does_not_create_a_second_admin() {
-    let (router, _pool) = test_router().await;
-    let body = "username=first&password=correcthorsebatterystaple&password_confirm=correcthorsebatterystaple";
+    let (router, pool) = test_router().await;
+    // Both racers present the same valid token — two browsers that both
+    // loaded `/setup?token=...` before either submitted, the scenario the
+    // singleton DB guard (not the token check) is meant to resolve.
+    let token = setup_token(&pool).await;
+    let body = format!(
+        "username=first&password=correcthorsebatterystaple&password_confirm=correcthorsebatterystaple&token={token}"
+    );
 
     let first = router
         .clone()
-        .oneshot(form_request("POST", "/setup", body, None))
+        .oneshot(form_request("POST", "/setup", &body, None))
         .await
         .unwrap();
     assert_eq!(first.status(), StatusCode::SEE_OTHER);
 
-    let second_body = "username=second&password=correcthorsebatterystaple&password_confirm=correcthorsebatterystaple";
+    let second_body = format!(
+        "username=second&password=correcthorsebatterystaple&password_confirm=correcthorsebatterystaple&token={token}"
+    );
     let second = router
         .clone()
-        .oneshot(form_request("POST", "/setup", second_body, None))
+        .oneshot(form_request("POST", "/setup", &second_body, None))
         .await
         .unwrap();
     // Loses the race: redirected straight to login, no second admin
@@ -209,15 +270,107 @@ async fn second_setup_submission_does_not_create_a_second_admin() {
 }
 
 #[tokio::test]
+async fn setup_form_rejects_missing_or_wrong_token() {
+    let (router, pool) = test_router().await;
+    assert!(
+        crate::db::settings::current_setup_token(&pool)
+            .await
+            .is_some()
+    );
+
+    let no_token = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/setup")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(no_token.status(), StatusCode::OK);
+    let body = no_token.into_body().collect().await.unwrap().to_bytes();
+    assert!(String::from_utf8_lossy(&body).contains("Missing or incorrect setup token"));
+
+    let wrong_token = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/setup?token=not-the-real-token")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body = wrong_token.into_body().collect().await.unwrap().to_bytes();
+    assert!(String::from_utf8_lossy(&body).contains("Missing or incorrect setup token"));
+}
+
+#[tokio::test]
+async fn setup_submit_rejects_wrong_token_without_creating_admin() {
+    let (router, pool) = test_router().await;
+
+    let resp = router
+        .clone()
+        .oneshot(form_request(
+            "POST",
+            "/setup",
+            "username=admin&password=correcthorsebatterystaple&password_confirm=correcthorsebatterystaple&token=wrong",
+            None,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    assert!(String::from_utf8_lossy(&body).contains("Missing or incorrect setup token"));
+
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
+#[tokio::test]
+async fn setup_with_correct_token_clears_it_after_completion() {
+    let (router, pool) = test_router().await;
+    let token = setup_token(&pool).await;
+
+    let resp = router
+        .clone()
+        .oneshot(form_request(
+            "POST",
+            "/setup",
+            &format!(
+                "username=admin&password=correcthorsebatterystaple&password_confirm=correcthorsebatterystaple&token={token}"
+            ),
+            None,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+
+    assert!(
+        crate::db::settings::current_setup_token(&pool)
+            .await
+            .is_none(),
+        "token should be consumed once the admin account is claimed"
+    );
+}
+
+#[tokio::test]
 async fn api_status_requires_login() {
-    let (router, _pool) = test_router().await;
+    let (router, pool) = test_router().await;
     // Setup completed so the setup-gate doesn't mask the auth check.
+    let token = setup_token(&pool).await;
     router
         .clone()
         .oneshot(form_request(
             "POST",
             "/setup",
-            "username=admin&password=correcthorsebatterystaple&password_confirm=correcthorsebatterystaple",
+            &format!(
+                "username=admin&password=correcthorsebatterystaple&password_confirm=correcthorsebatterystaple&token={token}"
+            ),
             None,
         ))
         .await
@@ -240,12 +393,15 @@ async fn api_status_requires_login() {
 #[tokio::test]
 async fn non_admin_cannot_reset_passwords() {
     let (router, pool) = test_router().await;
+    let token = setup_token(&pool).await;
     router
         .clone()
         .oneshot(form_request(
             "POST",
             "/setup",
-            "username=admin&password=correcthorsebatterystaple&password_confirm=correcthorsebatterystaple",
+            &format!(
+                "username=admin&password=correcthorsebatterystaple&password_confirm=correcthorsebatterystaple&token={token}"
+            ),
             None,
         ))
         .await
@@ -447,6 +603,204 @@ async fn viewer_cannot_change_units_but_operator_can() {
     );
 }
 
+#[tokio::test]
+async fn ir_code_defaults_to_null_and_viewer_can_read_it() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "viewer1", "viewer").await;
+
+    let resp = router
+        .clone()
+        .oneshot(empty_request("GET", "/api/system/ir", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["code"], serde_json::Value::Null);
+}
+
+#[tokio::test]
+async fn viewer_cannot_trigger_ir_learn_but_operator_can() {
+    let (router, pool) = test_router().await;
+    let viewer_cookie = seed_and_login(&router, &pool, "viewer1", "viewer").await;
+
+    let forbidden = router
+        .clone()
+        .oneshot(empty_request(
+            "POST",
+            "/api/system/ir/learn",
+            &viewer_cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
+
+    let op_cookie = seed_and_login(&router, &pool, "op1", "operator").await;
+
+    // The test router's fan backend is the no-op stub (no case attached),
+    // so `learn_ir_code` always returns `Ok(None)` — this exercises the
+    // permission gate and the "nothing captured" response path, not a
+    // real hardware capture (that needs the real I2C backend, untestable
+    // without hardware).
+    let resp = router
+        .clone()
+        .oneshot(empty_request("POST", "/api/system/ir/learn", &op_cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    // Nothing captured -> nothing persisted.
+    let after = router
+        .clone()
+        .oneshot(empty_request("GET", "/api/system/ir", &op_cookie))
+        .await
+        .unwrap();
+    let body = after.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["code"], serde_json::Value::Null);
+}
+
+#[tokio::test]
+async fn https_config_defaults_to_off_and_operator_cannot_change_it() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "op1", "operator").await;
+
+    let get = router
+        .clone()
+        .oneshot(empty_request("GET", "/api/system/https", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(get.status(), StatusCode::OK);
+    let body = get.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["mode"], "off");
+    assert_eq!(json["domain"], serde_json::Value::Null);
+
+    let put = router
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            "/api/system/https",
+            r#"{"mode":"tailscale","domain":"rpi01.example.ts.net"}"#,
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(put.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn admin_can_set_and_read_back_https_config() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "admin1", "admin").await;
+
+    let put = router
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            "/api/system/https",
+            r#"{"mode":"tailscale","domain":"rpi01.example.ts.net"}"#,
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(put.status(), StatusCode::OK);
+
+    assert_eq!(
+        crate::db::settings::load_https_config(&pool).await,
+        crate::config::HttpsConfig {
+            mode: crate::config::HttpsMode::Tailscale,
+            domain: Some("rpi01.example.ts.net".to_string()),
+            email: None,
+        }
+    );
+}
+
+#[tokio::test]
+async fn reissue_cert_requires_admin() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "op1", "operator").await;
+
+    let resp = router
+        .clone()
+        .oneshot(empty_request("POST", "/api/system/https/reissue", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn reissue_cert_rejects_when_mode_is_not_tailscale() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "admin1", "admin").await;
+
+    // Default mode is "off" — re-issue only makes sense once "tailscale"
+    // with a domain is actually saved (not just selected-but-unsaved in
+    // the form).
+    let resp = router
+        .clone()
+        .oneshot(empty_request("POST", "/api/system/https/reissue", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn system_page_https_card_starts_with_save_disabled_and_no_cert_status() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "admin1", "admin").await;
+
+    let resp = router
+        .clone()
+        .oneshot(empty_request("GET", "/system", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let html = String::from_utf8_lossy(&body);
+    assert!(html.contains(r#"id="saveHttpsBtn" type="button" disabled"#));
+    assert!(!html.contains("Certificate active"));
+    assert!(html.contains("Active</span>")); // HTTP-only is the default active mode
+}
+
+#[tokio::test]
+async fn https_config_rejects_tailscale_or_acme_mode_without_a_domain() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "admin1", "admin").await;
+
+    for mode in ["tailscale", "acme"] {
+        let resp = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                "/api/system/https",
+                &format!(r#"{{"mode":"{mode}"}}"#),
+                &cookie,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+}
+
+#[tokio::test]
+async fn https_config_rejects_unknown_mode() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "admin1", "admin").await;
+
+    let resp = router
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            "/api/system/https",
+            r#"{"mode":"bogus"}"#,
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
 /// Regression test: switching units on the System page used to only
 /// reach the OLED display — `GET /api/status` (and the WebSocket `stats`
 /// message it shares a payload shape with) kept reporting `unit: "C"`
@@ -499,6 +853,36 @@ async fn api_status_reflects_units_after_a_put() {
         .await
         .unwrap();
     assert_eq!(get_body(after).await["unit"], "F");
+}
+
+/// v0.6.0's dashboard data-surface gaps (W§3.3 Tier 1) — load average and
+/// swap are cheap single-snapshot reads, so `/api/status` carries them
+/// too, not just the WebSocket `stats` message.
+#[tokio::test]
+async fn api_status_includes_load_avg_and_swap_fields() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "op1", "operator").await;
+
+    let resp = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/status")
+                .header("cookie", &cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    // Present in the shape either way — `null` on a box without a
+    // readable `/proc` is a valid value, a missing key is not.
+    assert!(json.get("load_avg_1").is_some());
+    assert!(json.get("load_avg_5").is_some());
+    assert!(json.get("load_avg_15").is_some());
+    assert!(json.get("swap_used_pct").is_some());
 }
 
 /// `GET /api/settings/units` was missing entirely (only `PUT` was wired)
@@ -619,7 +1003,91 @@ async fn system_page_renders_rtc_card_on_eon_board() {
             html.contains("Power &amp; RTC"),
             "{role} should see the RTC card"
         );
+        assert!(
+            html.contains("IR remote"),
+            "{role} should see the IR remote card on a real case"
+        );
     }
+}
+
+/// Same rationale as `system_page_renders_rtc_card_on_eon_board` — the
+/// dashboard's Power & RTC and Display cards are `{% if is_eon %}`-gated
+/// and never exercised by the default `Board::NoCase` test router.
+#[tokio::test]
+async fn dashboard_renders_eon_only_cards_on_eon_board() {
+    let (router, pool) = test_router_with_board(crate::hardware::board::Board::Eon).await;
+    let cookie = seed_and_login(&router, &pool, "viewer1", "viewer").await;
+
+    let resp = router
+        .clone()
+        .oneshot(empty_request("GET", "/", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let html = String::from_utf8_lossy(&body);
+    assert!(
+        !html.contains("internal error rendering"),
+        "dashboard.html failed to render: {html}"
+    );
+    assert!(html.contains("Power &amp; RTC"));
+    assert!(html.contains("Not scheduled")); // no schedule saved yet
+    assert!(html.contains("oledThumbCanvas"));
+}
+
+#[tokio::test]
+async fn dashboard_hides_eon_only_cards_with_no_case_attached() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "viewer1", "viewer").await;
+
+    let resp = router
+        .clone()
+        .oneshot(empty_request("GET", "/", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let html = String::from_utf8_lossy(&body);
+    assert!(!html.contains("Power &amp; RTC"));
+    assert!(!html.contains("oledThumbCanvas"));
+}
+
+#[tokio::test]
+async fn system_page_hides_ir_card_with_no_case_attached() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "op1", "operator").await;
+    let resp = router
+        .clone()
+        .oneshot(empty_request("GET", "/system", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let html = String::from_utf8_lossy(&body);
+    assert!(!html.contains("IR remote"));
+}
+
+#[tokio::test]
+async fn system_page_shows_https_card_to_admin_only() {
+    let (router, pool) = test_router().await;
+
+    let admin_cookie = seed_and_login(&router, &pool, "admin1", "admin").await;
+    let admin_resp = router
+        .clone()
+        .oneshot(empty_request("GET", "/system", &admin_cookie))
+        .await
+        .unwrap();
+    let admin_body = admin_resp.into_body().collect().await.unwrap().to_bytes();
+    assert!(String::from_utf8_lossy(&admin_body).contains("HTTPS &amp; remote access"));
+
+    let op_cookie = seed_and_login(&router, &pool, "op1", "operator").await;
+    let op_resp = router
+        .clone()
+        .oneshot(empty_request("GET", "/system", &op_cookie))
+        .await
+        .unwrap();
+    let op_body = op_resp.into_body().collect().await.unwrap().to_bytes();
+    assert!(!String::from_utf8_lossy(&op_body).contains("HTTPS &amp; remote access"));
 }
 
 #[tokio::test]
@@ -860,12 +1328,15 @@ async fn cannot_delete_or_demote_the_last_admin() {
 #[tokio::test]
 async fn admin_cannot_remove_own_account() {
     let (router, pool) = test_router().await;
+    let token = setup_token(&pool).await;
     router
         .clone()
         .oneshot(form_request(
             "POST",
             "/setup",
-            "username=admin&password=correcthorsebatterystaple&password_confirm=correcthorsebatterystaple",
+            &format!(
+                "username=admin&password=correcthorsebatterystaple&password_confirm=correcthorsebatterystaple&token={token}"
+            ),
             None,
         ))
         .await
@@ -1210,6 +1681,8 @@ async fn oled_preview_renders_the_currently_selected_screen() {
         rtc_schedule_tx,
         oled_config_tx,
         oled_screen_rx,
+        std::sync::Arc::new(crate::hardware::noop::NoopFan),
+        crate::config::HttpsMode::Off,
     )
     .await;
 
@@ -1324,4 +1797,182 @@ async fn unlock_on_missing_user_is_404() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn non_admin_cannot_view_audit_log() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "operator1", "operator").await;
+
+    let page = router
+        .clone()
+        .oneshot(empty_request("GET", "/audit", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(page.status(), StatusCode::SEE_OTHER);
+    assert_eq!(page.headers().get("location").unwrap(), "/");
+}
+
+#[tokio::test]
+async fn admin_can_view_and_filter_audit_log() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "admin1", "admin").await;
+
+    // `seed_and_login`'s own user-creation isn't audited (it's a direct
+    // SQL insert, not the API handler) — create one through the real
+    // handler so there's a `user.create` row to find.
+    let create = router
+        .clone()
+        .oneshot(json_request(
+            "POST",
+            "/api/users",
+            r#"{"username":"newop","role":"operator"}"#,
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(create.status(), StatusCode::OK);
+
+    let page = router
+        .clone()
+        .oneshot(empty_request("GET", "/audit", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(page.status(), StatusCode::OK);
+    let body = page.into_body().collect().await.unwrap().to_bytes();
+    let html = String::from_utf8_lossy(&body);
+    assert!(
+        !html.contains("internal error rendering"),
+        "audit.html failed to render: {html}"
+    );
+    assert!(html.contains("user.create"));
+    assert!(html.contains("admin1"));
+    assert!(
+        html.contains("action-badge user"),
+        "user.create should get the 'user' badge category: {html}"
+    );
+
+    // Filtered to a prefix with no matching rows -> empty result, not an error.
+    let filtered = router
+        .clone()
+        .oneshot(empty_request("GET", "/audit?action=fan_curve", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(filtered.status(), StatusCode::OK);
+    let filtered_body = filtered.into_body().collect().await.unwrap().to_bytes();
+    let filtered_html = String::from_utf8_lossy(&filtered_body);
+    assert!(!filtered_html.contains("user.create"));
+    assert!(filtered_html.contains("No matching audit entries"));
+}
+
+#[tokio::test]
+async fn voluntary_change_password_shows_voluntary_copy_and_redirects_with_notice() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "viewer1", "viewer").await;
+
+    let form_resp = router
+        .clone()
+        .oneshot(empty_request("GET", "/account/change-password", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(form_resp.status(), StatusCode::OK);
+    let body = form_resp.into_body().collect().await.unwrap().to_bytes();
+    let html = String::from_utf8_lossy(&body);
+    assert!(html.contains("Choose a new password for your account."));
+    assert!(!html.contains("An administrator reset your password"));
+    assert!(html.contains("Cancel"));
+
+    let submit = router
+        .clone()
+        .oneshot(form_request(
+            "POST",
+            "/account/change-password",
+            "password=brandnewpassword1&password_confirm=brandnewpassword1",
+            Some(&cookie),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(submit.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        submit.headers().get("location").unwrap(),
+        "/login?notice=password_updated"
+    );
+}
+
+#[tokio::test]
+async fn forced_change_password_shows_forced_copy_and_no_cancel_button() {
+    let (router, pool) = test_router().await;
+    // Seed the user directly with `must_change_pw` already set, rather than
+    // driving the real admin-reset flow — that flow is covered elsewhere
+    // (`non_admin_cannot_reset_passwords`); this test only needs a logged-in
+    // session that's still in the forced-change state.
+    let token = setup_token(&pool).await;
+    router
+        .clone()
+        .oneshot(form_request(
+            "POST",
+            "/setup",
+            &format!(
+                "username=admin&password=correcthorsebatterystaple&password_confirm=correcthorsebatterystaple&token={token}"
+            ),
+            None,
+        ))
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO users (username, password_hash, role, must_change_pw) VALUES ('viewer1', ?1, 'viewer', 1)",
+    )
+    .bind(crate::auth::hash_password("viewerpassword1"))
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let cookie = {
+        let resp = router
+            .clone()
+            .oneshot(form_request(
+                "POST",
+                "/login",
+                "username=viewer1&password=viewerpassword1",
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+        assert_eq!(
+            resp.headers().get("location").unwrap(),
+            "/account/change-password"
+        );
+        extract_set_cookie(&resp)
+    };
+
+    let form_resp = router
+        .clone()
+        .oneshot(empty_request("GET", "/account/change-password", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(form_resp.status(), StatusCode::OK);
+    let body = form_resp.into_body().collect().await.unwrap().to_bytes();
+    let html = String::from_utf8_lossy(&body);
+    assert!(html.contains("An administrator reset your password"));
+    assert!(!html.contains("Cancel"));
+}
+
+#[tokio::test]
+async fn login_page_shows_password_updated_notice() {
+    let (router, pool) = test_router().await;
+    let _ = seed_and_login(&router, &pool, "viewer1", "viewer").await;
+    let resp = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/login?notice=password_updated")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    assert!(String::from_utf8_lossy(&body).contains("Password updated"));
 }

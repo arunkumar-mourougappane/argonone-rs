@@ -4,9 +4,9 @@ use super::AppState;
 use super::templates::render;
 use crate::auth::{AuthSession, Credentials, hash_password};
 use axum::Form;
-use axum::extract::{Request, State};
+use axum::extract::{Query, Request, State};
 use axum::middleware::Next;
-use axum::response::{Html, IntoResponse, Redirect, Response};
+use axum::response::{IntoResponse, Redirect, Response};
 use minijinja::context;
 use serde::Deserialize;
 
@@ -24,11 +24,26 @@ pub async fn require_login(auth_session: AuthSession, req: Request, next: Next) 
     next.run(req).await
 }
 
-pub async fn form(State(state): State<AppState>, auth_session: AuthSession) -> Response {
+#[derive(Debug, Deserialize)]
+pub struct LoginQuery {
+    #[serde(default)]
+    notice: Option<String>,
+}
+
+pub async fn form(
+    State(state): State<AppState>,
+    auth_session: AuthSession,
+    Query(query): Query<LoginQuery>,
+) -> Response {
     if auth_session.user.is_some() {
         return Redirect::to("/").into_response();
     }
-    render(&state.env, "login.html", context! {}).into_response()
+    render(
+        &state.env,
+        "login.html",
+        context! { notice => query.notice },
+    )
+    .into_response()
 }
 
 #[derive(Debug, Deserialize)]
@@ -86,8 +101,17 @@ pub async fn logout(mut auth_session: AuthSession) -> impl IntoResponse {
     Redirect::to("/login")
 }
 
-pub async fn change_password_form(State(state): State<AppState>) -> Html<String> {
-    render(&state.env, "change_password.html", context! {})
+pub async fn change_password_form(
+    auth_session: AuthSession,
+    State(state): State<AppState>,
+) -> Response {
+    let forced = auth_session.user.as_ref().is_some_and(|u| u.must_change_pw);
+    render(
+        &state.env,
+        "change_password.html",
+        context! { forced => forced },
+    )
+    .into_response()
 }
 
 #[derive(Debug, Deserialize)]
@@ -104,11 +128,12 @@ pub async fn change_password_submit(
     let Some(user) = auth_session.user.clone() else {
         return Redirect::to("/login").into_response();
     };
+    let forced = user.must_change_pw;
     if form.password.len() < 8 {
         return render(
             &state.env,
             "change_password.html",
-            context! { error => "Password must be at least 8 characters" },
+            context! { error => "Password must be at least 8 characters", forced => forced },
         )
         .into_response();
     }
@@ -116,7 +141,7 @@ pub async fn change_password_submit(
         return render(
             &state.env,
             "change_password.html",
-            context! { error => "Passwords do not match" },
+            context! { error => "Passwords do not match", forced => forced },
         )
         .into_response();
     }
@@ -133,7 +158,7 @@ pub async fn change_password_submit(
         return render(
             &state.env,
             "change_password.html",
-            context! { error => "Internal error, try again" },
+            context! { error => "Internal error, try again", forced => forced },
         )
         .into_response();
     }
@@ -141,6 +166,8 @@ pub async fn change_password_submit(
     // The stored hash just changed, which invalidates `session_auth_hash`
     // for this session anyway (A§2.2) — log out explicitly rather than
     // leaving the browser holding a session about to be treated as stale.
+    // The login page's `notice` banner (not an `error`) explains why,
+    // since otherwise this looks like an unprompted, unexplained logout.
     let _ = auth_session.logout().await;
-    Redirect::to("/login").into_response()
+    Redirect::to("/login?notice=password_updated").into_response()
 }

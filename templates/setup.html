@@ -11,6 +11,7 @@
     <p class="lede">This is a one-time setup. The first account created here is always an admin — additional users (and their roles) can be added later.</p>
     {% if error %}<div class="error">{{ error }}</div>{% endif %}
     <form method="post" action="/setup">
+      {% if token %}<input type="hidden" name="token" value="{{ token }}">{% endif %}
       <div class="field">
         <label for="username">Username</label>
         <input type="text" id="username" name="username" autocomplete="username" required>
@@ -25,7 +26,7 @@
       </div>
       <button type="submit" class="btn">Create admin account</button>
     </form>
-    <p class="note">This device is on your local network. Complete setup right away so nobody else on the network claims the first admin account.</p>
+    <p class="note">This device is on your local network. Complete setup right away so nobody else on the network claims the first admin account. This page requires the one-time setup token printed to the console/journal at boot (<code>journalctl -u argonone-rs</code>) as a <code>?token=</code> query parameter.</p>
   </div>
 </div>
 {% endblock %}

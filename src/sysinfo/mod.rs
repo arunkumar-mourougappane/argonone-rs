@@ -76,6 +76,13 @@ fn parse_cpu_temp_c(raw: &str) -> Option<f32> {
 pub struct MemInfo {
     pub total_kb: u64,
     pub available_kb: u64,
+    /// `SwapTotal`/`SwapFree` sit right next to `MemTotal`/`MemFree` in the
+    /// same `/proc/meminfo` parse — worth surfacing on a Pi where swapping
+    /// (often onto the SD card) is a real performance cliff, not a
+    /// rounding error (W§3.3 Tier 1). Zero when the device has no swap
+    /// configured, same as an absent key would imply.
+    pub swap_total_kb: u64,
+    pub swap_free_kb: u64,
 }
 
 impl MemInfo {
@@ -85,6 +92,17 @@ impl MemInfo {
         }
         let used = self.total_kb.saturating_sub(self.available_kb) as f32;
         used / self.total_kb as f32 * 100.0
+    }
+
+    pub fn swap_used_kb(&self) -> u64 {
+        self.swap_total_kb.saturating_sub(self.swap_free_kb)
+    }
+
+    pub fn swap_used_percent(&self) -> f32 {
+        if self.swap_total_kb == 0 {
+            return 0.0;
+        }
+        self.swap_used_kb() as f32 / self.swap_total_kb as f32 * 100.0
     }
 }
 
@@ -96,18 +114,24 @@ pub fn read_mem_info() -> Option<MemInfo> {
 fn parse_mem_info(contents: &str) -> Option<MemInfo> {
     let mut total_kb = None;
     let mut available_kb = None;
+    let mut swap_total_kb = 0;
+    let mut swap_free_kb = 0;
     for line in contents.lines() {
         let (key, rest) = line.split_once(':')?;
         let value: u64 = rest.split_whitespace().next()?.parse().ok()?;
         match key {
             "MemTotal" => total_kb = Some(value),
             "MemAvailable" => available_kb = Some(value),
+            "SwapTotal" => swap_total_kb = value,
+            "SwapFree" => swap_free_kb = value,
             _ => {}
         }
     }
     Some(MemInfo {
         total_kb: total_kb?,
         available_kb: available_kb?,
+        swap_total_kb,
+        swap_free_kb,
     })
 }
 
@@ -397,6 +421,19 @@ fn parse_uptime_secs(raw: &str) -> Option<u64> {
     Some(seconds as u64)
 }
 
+/// `PRETTY_NAME` from `/etc/os-release` (e.g. `"Ubuntu 26.04 LTS"`) — the
+/// System page (v0.4.0) and dashboard (v0.6.0) both show it, shared here
+/// rather than each keeping its own copy.
+pub fn os_release_pretty_name() -> Option<String> {
+    let contents = std::fs::read_to_string("/etc/os-release").ok()?;
+    for line in contents.lines() {
+        if let Some(value) = line.strip_prefix("PRETTY_NAME=") {
+            return Some(value.trim_matches('"').to_string());
+        }
+    }
+    None
+}
+
 /// The machine's configured hostname (e.g. `rpi01`), from the kernel
 /// rather than `/etc/hostname` — reflects what's actually live even if a
 /// runtime `sethostname()` diverged from the config file, matching what
@@ -417,6 +454,138 @@ pub fn read_local_ip() -> Option<std::net::IpAddr> {
     Some(socket.local_addr().ok()?.ip())
 }
 
+/// 1/5/15-minute load average, from `/proc/loadavg`'s first three fields
+/// (the rest are runnable/total-process counts and the last-PID, not
+/// needed here) — a classic Linux health signal this audience reads
+/// fluently, and trivially cheap to add (W§3.3 Tier 1).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LoadAvg {
+    pub one: f32,
+    pub five: f32,
+    pub fifteen: f32,
+}
+
+pub fn read_load_avg() -> Option<LoadAvg> {
+    let raw = fs::read_to_string("/proc/loadavg").ok()?;
+    parse_load_avg(&raw)
+}
+
+fn parse_load_avg(raw: &str) -> Option<LoadAvg> {
+    let mut fields = raw.split_whitespace();
+    Some(LoadAvg {
+        one: fields.next()?.parse().ok()?,
+        five: fields.next()?.parse().ok()?,
+        fifteen: fields.next()?.parse().ok()?,
+    })
+}
+
+/// The interface carrying the default route, from `/proc/net/route`
+/// (`Destination` `00000000` marks the default) — kept to "whichever
+/// interface matters" rather than exposing every interface, since a Pi in
+/// a case almost always has exactly one (W§3.3 Tier 1).
+pub fn read_default_iface() -> Option<String> {
+    let contents = fs::read_to_string("/proc/net/route").ok()?;
+    parse_default_iface(&contents)
+}
+
+fn parse_default_iface(contents: &str) -> Option<String> {
+    for line in contents.lines().skip(1) {
+        let mut fields = line.split_whitespace();
+        let iface = fields.next()?;
+        let dest = fields.next()?;
+        if dest == "00000000" {
+            return Some(iface.to_string());
+        }
+    }
+    None
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct IfaceBytes {
+    rx_bytes: u64,
+    tx_bytes: u64,
+}
+
+/// Reads `iface`'s cumulative rx/tx byte counters from `/proc/net/dev`.
+/// Cumulative-since-boot, not a rate — [`NetUsage`] diffs two samples to
+/// get bytes/sec, the same pattern [`CpuUsage`] uses for CPU%.
+fn read_iface_bytes(iface: &str) -> Option<IfaceBytes> {
+    let contents = fs::read_to_string("/proc/net/dev").ok()?;
+    parse_iface_bytes(&contents, iface)
+}
+
+fn parse_iface_bytes(contents: &str, iface: &str) -> Option<IfaceBytes> {
+    for line in contents.lines() {
+        let Some((name, rest)) = line.split_once(':') else {
+            continue;
+        };
+        if name.trim() != iface {
+            continue;
+        }
+        let mut fields = rest.split_whitespace();
+        let rx_bytes: u64 = fields.next()?.parse().ok()?;
+        // rx: bytes packets errs drop fifo frame compressed multicast,
+        // then tx bytes starts — skip the 7 rx fields after rx_bytes.
+        let tx_bytes: u64 = fields.nth(7)?.parse().ok()?;
+        return Some(IfaceBytes { rx_bytes, tx_bytes });
+    }
+    None
+}
+
+#[derive(Debug, Clone)]
+pub struct NetRates {
+    pub iface: String,
+    pub rx_bytes_per_sec: u64,
+    pub tx_bytes_per_sec: u64,
+}
+
+/// Tracks a previous default-interface byte-counter sample to compute a
+/// throughput rate as a delta, matching [`CpuUsage`]'s approach — a single
+/// snapshot of `/proc/net/dev` is cumulative-since-boot, not a rate.
+#[derive(Default)]
+pub struct NetUsage {
+    prev: Option<(String, IfaceBytes, std::time::Instant)>,
+}
+
+impl NetUsage {
+    pub fn new() -> Self {
+        NetUsage::default()
+    }
+
+    /// Returns `None` on the first call (needs two samples), if the
+    /// default interface changed between samples (a link flap — diffing
+    /// across two different counters would be meaningless), or if
+    /// `/proc/net/route`/`/proc/net/dev` aren't readable.
+    pub fn sample_rates(&mut self) -> Option<NetRates> {
+        let iface = read_default_iface()?;
+        let bytes = read_iface_bytes(&iface)?;
+        let now = std::time::Instant::now();
+
+        let result = self
+            .prev
+            .as_ref()
+            .and_then(|(prev_iface, prev_bytes, prev_time)| {
+                if *prev_iface != iface {
+                    return None;
+                }
+                let elapsed = now.duration_since(*prev_time).as_secs_f64();
+                if elapsed <= 0.0 {
+                    return None;
+                }
+                Some(NetRates {
+                    iface: iface.clone(),
+                    rx_bytes_per_sec: (bytes.rx_bytes.saturating_sub(prev_bytes.rx_bytes) as f64
+                        / elapsed) as u64,
+                    tx_bytes_per_sec: (bytes.tx_bytes.saturating_sub(prev_bytes.tx_bytes) as f64
+                        / elapsed) as u64,
+                })
+            });
+
+        self.prev = Some((iface, bytes, now));
+        result
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -426,6 +595,8 @@ mod tests {
         let mem = MemInfo {
             total_kb: 0,
             available_kb: 0,
+            swap_total_kb: 0,
+            swap_free_kb: 0,
         };
         assert_eq!(mem.used_percent(), 0.0);
     }
@@ -435,8 +606,33 @@ mod tests {
         let mem = MemInfo {
             total_kb: 1000,
             available_kb: 250,
+            swap_total_kb: 0,
+            swap_free_kb: 0,
         };
         assert_eq!(mem.used_percent(), 75.0);
+    }
+
+    #[test]
+    fn swap_used_percent_handles_zero_swap() {
+        let mem = MemInfo {
+            total_kb: 1000,
+            available_kb: 250,
+            swap_total_kb: 0,
+            swap_free_kb: 0,
+        };
+        assert_eq!(mem.swap_used_percent(), 0.0);
+    }
+
+    #[test]
+    fn swap_used_percent_computes_correctly() {
+        let mem = MemInfo {
+            total_kb: 1000,
+            available_kb: 250,
+            swap_total_kb: 1000,
+            swap_free_kb: 940,
+        };
+        assert_eq!(mem.swap_used_kb(), 60);
+        assert_eq!(mem.swap_used_percent(), 6.0);
     }
 
     #[test]
@@ -472,16 +668,75 @@ mod tests {
     #[test]
     fn parse_mem_info_reads_total_and_available() {
         let mem = parse_mem_info(
-            "MemTotal:       16384000 kB\nMemFree:         1000000 kB\nMemAvailable:    8192000 kB\n",
+            "MemTotal:       16384000 kB\nMemFree:         1000000 kB\nMemAvailable:    8192000 kB\n\
+             SwapTotal:       2000000 kB\nSwapFree:        1800000 kB\n",
         )
         .unwrap();
         assert_eq!(mem.total_kb, 16384000);
         assert_eq!(mem.available_kb, 8192000);
+        assert_eq!(mem.swap_total_kb, 2000000);
+        assert_eq!(mem.swap_free_kb, 1800000);
+    }
+
+    #[test]
+    fn parse_mem_info_defaults_swap_to_zero_when_absent() {
+        // Swapless devices simply omit these keys — not an error.
+        let mem = parse_mem_info(
+            "MemTotal:       16384000 kB\nMemFree:         1000000 kB\nMemAvailable:    8192000 kB\n",
+        )
+        .unwrap();
+        assert_eq!(mem.swap_total_kb, 0);
+        assert_eq!(mem.swap_free_kb, 0);
     }
 
     #[test]
     fn parse_mem_info_none_when_fields_missing() {
         assert!(parse_mem_info("MemFree: 1000 kB\n").is_none());
+    }
+
+    #[test]
+    fn parse_load_avg_reads_first_three_fields() {
+        let load = parse_load_avg("0.42 0.51 0.48 2/456 12345\n").unwrap();
+        assert_eq!(load.one, 0.42);
+        assert_eq!(load.five, 0.51);
+        assert_eq!(load.fifteen, 0.48);
+    }
+
+    #[test]
+    fn parse_load_avg_rejects_garbage() {
+        assert!(parse_load_avg("not-a-number").is_none());
+    }
+
+    #[test]
+    fn parse_default_iface_finds_zero_destination_route() {
+        let text = "Iface\tDestination\tGateway \tFlags\n\
+                     lo\t00800000\t00000000\t0001\n\
+                     eth0\t00000000\t0102A8C0\t0003\n";
+        assert_eq!(parse_default_iface(text), Some("eth0".to_string()));
+    }
+
+    #[test]
+    fn parse_default_iface_none_without_a_default_route() {
+        let text = "Iface\tDestination\tGateway \tFlags\n\
+                     lo\t00800000\t00000000\t0001\n";
+        assert_eq!(parse_default_iface(text), None);
+    }
+
+    #[test]
+    fn parse_iface_bytes_reads_rx_and_tx() {
+        let text = "Inter-|   Receive                                                |  Transmit\n \
+                     face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo frame compressed\n\
+                        lo:    1296      16    0    0    0     0          0         0     1296      16    0    0    0     0       0          0\n\
+                      eth0: 123456789   98765    0    0    0     0          0      1234  87654321   54321    0    0    0     0       0          0\n";
+        let bytes = parse_iface_bytes(text, "eth0").unwrap();
+        assert_eq!(bytes.rx_bytes, 123456789);
+        assert_eq!(bytes.tx_bytes, 87654321);
+    }
+
+    #[test]
+    fn parse_iface_bytes_none_for_unknown_iface() {
+        let text = "Inter-|   Receive\n face |bytes\n    lo:    1296      16\n";
+        assert!(parse_iface_bytes(text, "eth0").is_none());
     }
 
     #[test]

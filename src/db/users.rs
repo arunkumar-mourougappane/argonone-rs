@@ -33,6 +33,22 @@ pub async fn list_users(pool: &DbPool) -> Result<Vec<UserRow>, sqlx::Error> {
     .await
 }
 
+/// Single-row lookup for the dashboard's "Signed in as" card (v0.6.0) —
+/// `auth::User` (the session-hot-path struct) deliberately skips
+/// `first_name`/`last_name`/`last_login_at`, so this reuses `UserRow`'s
+/// fuller column set instead of adding those fields to the hot path.
+pub async fn get_user(pool: &DbPool, id: i64) -> Result<Option<UserRow>, sqlx::Error> {
+    sqlx::query_as::<_, UserRow>(
+        "SELECT id, username, first_name, last_name, role, must_change_pw, locked_until,
+                (locked_until IS NOT NULL AND locked_until > datetime('now')) AS is_locked,
+                created_at, last_login_at
+         FROM users WHERE id = ?1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+}
+
 /// How many admin accounts currently exist. Production code folds this
 /// into the same atomic statement as the guarded delete/role-change
 /// below rather than checking it as a separate step first (a prior
@@ -179,6 +195,20 @@ mod tests {
         assert_eq!(users[0].role, "operator");
         assert!(users[0].must_change_pw);
         assert!(!users[0].is_locked);
+    }
+
+    #[tokio::test]
+    async fn get_user_finds_an_existing_row_and_none_for_a_missing_id() {
+        let pool = test_pool().await;
+        let id = create_user(&pool, "jdoe", Some("John"), Some("Doe"), "operator", "hash")
+            .await
+            .unwrap();
+
+        let found = get_user(&pool, id).await.unwrap().unwrap();
+        assert_eq!(found.username, "jdoe");
+        assert_eq!(found.first_name.as_deref(), Some("John"));
+
+        assert!(get_user(&pool, id + 1).await.unwrap().is_none());
     }
 
     #[tokio::test]

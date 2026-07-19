@@ -4,15 +4,33 @@
 use super::AppState;
 use super::templates::render;
 use crate::auth::hash_password;
+use crate::db::settings::{clear_setup_token, current_setup_token};
 use axum::Form;
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::response::{Html, IntoResponse, Redirect};
 use minijinja::context;
 use serde::Deserialize;
 use std::sync::atomic::Ordering;
 
-pub async fn form(State(state): State<AppState>) -> Html<String> {
-    render(&state.env, "setup.html", context! {})
+const BAD_TOKEN_ERROR: &str = "Missing or incorrect setup token. Check `journalctl -u argonone-rs` \
+    (or the console) for the token printed at boot, then open /setup?token=<token>.";
+
+#[derive(Debug, Deserialize)]
+pub struct SetupQuery {
+    #[serde(default)]
+    token: Option<String>,
+}
+
+pub async fn form(State(state): State<AppState>, Query(query): Query<SetupQuery>) -> Html<String> {
+    let expected = current_setup_token(&state.pool).await;
+    if expected.is_some() && query.token != expected {
+        return render(
+            &state.env,
+            "setup.html",
+            context! { error => BAD_TOKEN_ERROR },
+        );
+    }
+    render(&state.env, "setup.html", context! { token => query.token })
 }
 
 #[derive(Debug, Deserialize)]
@@ -20,12 +38,23 @@ pub struct SetupForm {
     username: String,
     password: String,
     password_confirm: String,
+    #[serde(default)]
+    token: Option<String>,
 }
 
 pub async fn submit(
     State(state): State<AppState>,
     Form(form): Form<SetupForm>,
 ) -> impl IntoResponse {
+    let expected = current_setup_token(&state.pool).await;
+    if expected.is_some() && form.token != expected {
+        return render(
+            &state.env,
+            "setup.html",
+            context! { error => BAD_TOKEN_ERROR },
+        )
+        .into_response();
+    }
     if form.username.trim().is_empty() {
         return render(
             &state.env,
@@ -110,6 +139,12 @@ pub async fn submit(
             context! { error => "Could not create that account (username may already be taken)" },
         )
         .into_response();
+    }
+
+    // Consumed in the same transaction as the admin insert — a losing
+    // racer's request can't present a still-valid token after this commits.
+    if let Err(e) = clear_setup_token(&mut tx).await {
+        tracing::warn!(error = %e, "setup: failed to clear setup token");
     }
 
     if let Err(e) = tx.commit().await {

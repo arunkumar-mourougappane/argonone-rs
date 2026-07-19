@@ -257,27 +257,95 @@ closes the researched-but-not-yet-built dashboard gaps.
 - HTTPS: Tailscale-issued certs (`tailscale cert` + daemon-owned renewal)
   as the primary path, `rustls-acme`/TLS-ALPN-01 for the custom-domain
   path, `Secure` cookie tied to active mode (A§4.4) — mockup already
-  built (`08-system-settings.html`'s HTTPS card)
+  built (`08-system-settings.html`'s HTTPS card). Done —
+  `src/https.rs` (mode dispatch, Tailscale cert issuance/renewal via
+  `axum_server::tls_rustls::RustlsConfig`, `rustls-acme` integration for
+  the custom-domain path), `src/config/mod.rs` (`HttpsMode`/`HttpsConfig`),
+  `src/db/settings.rs` (`https_config` setting), `src/web/system.rs`
+  (`GET`/`PUT /api/system/https`, admin-only), `templates/system.html`.
+  `SessionManagerLayer::with_secure` now follows the active mode
+  (`src/web/mod.rs`) rather than the previous hardcoded `false`. A mode
+  change takes effect on the next daemon restart — the listener isn't
+  hot-swapped the way a cert *renewal* is. Beyond the original bullet:
+  the Tailscale option's detail panel also surfaces the real on-disk
+  cert's issuer/expiry/auto-renew status (`https::read_cert_status`,
+  parsed via `x509-parser` from the actual `fullchain.pem` this module
+  writes — not tracked separately, so it can't drift from what's really
+  loaded) plus a "Re-issue now" action (`POST
+  /api/system/https/reissue`), matching `08-system-settings.html`'s
+  cert-status table exactly rather than a text-input-only stand-in for
+  it. **Not yet verified on real hardware/infra**: needs an actual
+  Tailscale-joined device and a real domain+ACME run to confirm the
+  `tailscale cert` invocation and the `rustls-acme` directory flow both
+  work end-to-end, not just that the code compiles and the
+  no-op/off-mode paths (and the cert parser, against a locally-generated
+  test cert) pass in-process tests.
 - Network throughput, load average, swap — the Tier 1 dashboard gaps
-  from W§3.3, already scoped and mocked on the dashboard
-- IR remote config page (learn/store code)
+  from W§3.3, already scoped and mocked on the dashboard. Done —
+  `src/sysinfo/mod.rs` (`read_load_avg`, `MemInfo::swap_used_percent`,
+  `NetUsage::sample_rates` diffing `/proc/net/dev` against the
+  default-routed interface from `/proc/net/route`), surfaced on both
+  `GET /api/status` and `/api/ws`'s `stats` message. **Beyond the
+  original bullet list**: rather than three standalone stat cards, these
+  landed as part of a full rebuild of the dashboard into the card grid
+  `03-dashboard.html` always specified — Fan control, Power & RTC (EON),
+  Network (with a client-side rolling sparkline), Storage, Display (EON,
+  a live OLED thumbnail reusing the same framebuffer-to-canvas approach
+  `/display`'s own preview uses), System, and Signed-in-as, each card
+  reusing its dedicated page's existing data rather than a second copy
+  of that logic (`src/web/dashboard.rs`, `templates/dashboard.html`).
+  This pulls v0.7.0's card-grid *contents* forward — see that entry's
+  note. `rtc_schedule::next_wake`'s matching logic was generalized into
+  `next_occurrence`/`next_sleep` for the Power & RTC card's "next sleep"
+  row, resolved against local wall-clock time via the `date` command
+  (this project's established "shell out" convention, and a deliberate
+  way to avoid `time`'s `local-offset` feature, which is unsound
+  cross-thread and gated off by default) — display-only; the real RTC
+  wake-alarm programming in `service::run` still reads the actual
+  hardware RTC. No UPS/battery data exists anywhere in this codebase, so
+  the mockup's "Power source"/"Battery" rows aren't shown — fabricating
+  those would be a real correctness bug, not an honest gap.
+- IR remote config page (learn/store code). Done —
+  `src/hardware/mod.rs` (`FanBackend::learn_ir_code`/`program_ir_code`),
+  `src/hardware/i2c.rs`, `src/db/settings.rs` (`ir_code` setting),
+  `src/web/system.rs`, `templates/system.html`. **Unverified against real
+  hardware**: the research doc documents I2C register `0x82` only as "IR
+  code (block write)" — no confirmed trigger sequence or code width. The
+  implementation here (a zeroed block write to start a 2s listen window,
+  then a 4-byte block read for the result) is a best-effort
+  reconstruction from that one line, flagged in code and needing the
+  same on-hardware confirmation pass every other hardware claim in this
+  project gets before being called settled.
 - Setup-wizard exposure window: one-time console-printed setup token
-  (A§1.1)
+  (A§1.1). Done — `src/db/settings.rs` (`generate_and_store_setup_token`/
+  `current_setup_token`/`clear_setup_token`), `src/web/setup.rs`,
+  `src/web/mod.rs`. A fresh token is generated (and logged via
+  `tracing::warn!`, visible in `journalctl -u argonone-rs`) on every boot
+  while `users` is still empty; `/setup` (both `GET` and `POST`) rejects
+  anything but the current token, and the token is consumed in the same
+  transaction as the winning admin insert so a losing racer's request
+  can't replay it afterward.
 - Audit log viewer (W§3.6): `audit_log` has been populated since v0.5.0
   by every privileged mutation but nothing reads it back — admin-only
   `GET /audit`, paginated, actor/action filters, no new schema. Mocked
-  at `docs/mockups/09-audit-log.html`.
+  at `docs/mockups/09-audit-log.html`. Done — `src/db/audit.rs`,
+  `src/web/audit.rs`, `templates/audit.html`.
 - Self-service "change my password" (W§3.6): `/account/change-password`
   (`src/web/login.rs`) already works but is only reachable via the
   forced `must_change_pw` redirect — add a sidebar account-menu link to
   it for voluntary use, no new backend route. Mocked at
   `docs/mockups/10-account.html` (which also documents the destination
-  screen, never mocked before now).
+  screen, never mocked before now). Done — `templates/app_shell.html`.
 
 **Deferred, not planned**: per-core CPU, disk I/O throughput, OS-update
 count (W§3.3 Tier 2 — real, just not scheduled yet); container
-management, network topology, historical time-series (W§3.3 Tier 3 —
-explicitly out of scope, not just unscheduled).
+management, network topology (W§3.3 Tier 3 — explicitly out of scope,
+not just unscheduled). Historical time-series was also Tier 3
+"explicitly out of scope" as a *stored, server-held* concept — that
+call still stands (no time-series DB/buffer exists) — but the Network
+card's sparkline above is a client-side-only rolling window over the
+current browser tab's own WebSocket ticks, reset on every reconnect,
+which doesn't actually implement what that Tier 3 line was ruling out.
 
 ---
 
@@ -310,9 +378,14 @@ Turns "a binary that works" into "a thing someone installs."
   RPi-Monitor): drag-and-drop reorder of the dashboard's card grid (Fan,
   Power & RTC, Network, Storage, Display, System, Signed in as), same
   interaction the OLED screen-rotation list already shipped in v0.5.0.
-  New `settings` key (`dashboard_layout`), `GET/PUT` following the
-  existing DB-backed-with-fallback-default pattern — no new architecture.
-  Mocked at `docs/mockups/11-dashboard-reorder.html`.
+  **The card grid itself (all seven cards, with live data) shipped early
+  in v0.6.0** — pulled forward so the dashboard matched
+  `03-dashboard.html` rather than staying the deliberately-light landing
+  page it started as; what's left here is purely the reorder
+  interaction, not building the cards. New `settings` key
+  (`dashboard_layout`), `GET/PUT` following the existing
+  DB-backed-with-fallback-default pattern — no new architecture. Mocked
+  at `docs/mockups/11-dashboard-reorder.html`.
 - System log viewer (W§3.8, found comparing against Cockpit's Logs
   module): admin-only, read-only page tailing `journalctl -u
   argonone-rs` — the only way to see daemon logs today is SSH. Shells

@@ -183,6 +183,63 @@ impl TempUnit {
     }
 }
 
+/// Which transport the web server binds (v0.6.0, A§4.4): Tailscale-issued
+/// certs as the recommended default for this audience, `rustls-acme` for
+/// a custom-domain/Let's Encrypt path, or an explicit plain-HTTP opt-out.
+/// Switching modes needs a daemon restart to rebind the listener — this
+/// isn't hot-reloaded the way a cert renewal is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HttpsMode {
+    Off,
+    Tailscale,
+    Acme,
+}
+
+impl HttpsMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            HttpsMode::Off => "off",
+            HttpsMode::Tailscale => "tailscale",
+            HttpsMode::Acme => "acme",
+        }
+    }
+}
+
+impl std::str::FromStr for HttpsMode {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "off" => Ok(HttpsMode::Off),
+            "tailscale" => Ok(HttpsMode::Tailscale),
+            "acme" => Ok(HttpsMode::Acme),
+            _ => Err(()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HttpsConfig {
+    pub mode: HttpsMode,
+    /// Tailscale MagicDNS name (`tailscale` mode) or public domain
+    /// (`acme` mode). Unused, and allowed to be `None`, in `Off` mode.
+    pub domain: Option<String>,
+    /// ACME contact email (`acme` mode only) — Let's Encrypt wants one
+    /// for expiry notices, though it isn't strictly required.
+    pub email: Option<String>,
+}
+
+impl HttpsConfig {
+    pub fn disabled() -> Self {
+        HttpsConfig {
+            mode: HttpsMode::Off,
+            domain: None,
+            email: None,
+        }
+    }
+}
+
 /// `/etc/argoneonoled.conf`: EON screen-rotation settings (W§1.3, §1.2).
 /// `screenlist` values in the wild are double-quoted
 /// (`screenlist="clock ip cpu storage temp"`); quotes are stripped on read.

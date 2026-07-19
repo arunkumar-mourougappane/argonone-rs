@@ -44,10 +44,17 @@ pub(crate) fn db_path() -> std::path::PathBuf {
         .unwrap_or_else(|_| std::path::PathBuf::from(crate::db::DEFAULT_DB_PATH))
 }
 
-/// `0.0.0.0:8080` by default — no HTTPS until v0.6.0 (A§4.4), so this is
-/// plain HTTP, meant for a trusted LAN.
-fn bind_addr() -> String {
-    std::env::var("ARGONONE_BIND").unwrap_or_else(|_| "0.0.0.0:8080".to_string())
+/// `0.0.0.0:8080` (plain HTTP) by default; `0.0.0.0:443` once an HTTPS
+/// mode (A§4.4) is configured, matching what a browser expects with no
+/// explicit port. `ARGONONE_BIND` always overrides either default.
+fn bind_addr(https_mode: crate::config::HttpsMode) -> String {
+    std::env::var("ARGONONE_BIND").unwrap_or_else(|_| {
+        if https_mode == crate::config::HttpsMode::Off {
+            "0.0.0.0:8080".to_string()
+        } else {
+            "0.0.0.0:443".to_string()
+        }
+    })
 }
 
 pub async fn run() {
@@ -88,6 +95,15 @@ pub async fn run() {
     apply_rtc_wake_alarm(hw.rtc.as_mut(), &rtc_schedule);
     let mut rtc_last_sleep_trigger: Option<(u16, u8, u8, u8, u8)> = None;
 
+    // Restore a previously-learned IR code (v0.6.0) in case the MCU
+    // doesn't retain register 0x82 across a power cycle itself —
+    // harmless no-op on legacy/no-case boards either way.
+    if let Some(code) = crate::db::settings::load_ir_code(&pool).await
+        && let Err(e) = hw.fan.program_ir_code(code)
+    {
+        tracing::warn!(error = %e, "failed to restore learned IR code to hardware at boot");
+    }
+
     let (fan_speed_tx, fan_speed_rx) = tokio::sync::watch::channel(0u8);
     // W§2.7: the REST write handlers push edited curves on these
     // channels after their DB write commits; the control loop below
@@ -100,8 +116,14 @@ pub async fn run() {
     let (rtc_schedule_tx, mut rtc_schedule_rx) = tokio::sync::watch::channel(rtc_schedule.clone());
     let (oled_config_tx, mut oled_config_rx) = tokio::sync::watch::channel(oled_cfg.clone());
     let (oled_screen_tx, oled_screen_rx) = tokio::sync::watch::channel(None::<Screen>);
-    let bind_addr = bind_addr();
-    let listener = match tokio::net::TcpListener::bind(&bind_addr).await {
+
+    let https_config = crate::db::settings::load_https_config(&pool).await;
+    let bind_addr = bind_addr(https_config.mode);
+    // A plain `std::net::TcpListener` rather than tokio's: `https::spawn_server`
+    // decides which transport (plain HTTP, Tailscale-cert, or ACME) wraps it,
+    // so the bind — and the fail-fast exit on a bad address/port — happens
+    // once here regardless of mode.
+    let listener = match std::net::TcpListener::bind(&bind_addr) {
         Ok(l) => l,
         Err(e) => {
             tracing::error!(error = %e, addr = %bind_addr, "failed to bind web server, exiting");
@@ -118,14 +140,12 @@ pub async fn run() {
         rtc_schedule_tx,
         oled_config_tx,
         oled_screen_rx,
+        hw.fan.clone(),
+        https_config.mode,
     )
     .await;
-    tracing::info!(addr = %bind_addr, "web server listening");
-    tokio::spawn(async move {
-        if let Err(e) = axum::serve(listener, router).await {
-            tracing::error!(error = %e, "web server task ended unexpectedly");
-        }
-    });
+    tracing::info!(addr = %bind_addr, mode = https_config.mode.as_str(), "web server listening");
+    crate::https::spawn_server(listener, https_config, router);
 
     let mut button_rx = hw.button.spawn();
     let mut fan_controller = FanController::new(cpu_curve, SystemCpuTemp);
@@ -631,6 +651,12 @@ mod tests {
         }
         fn signal_poweroff(&self) -> HwResult<()> {
             self.0.lock().unwrap().push("signal_poweroff");
+            Ok(())
+        }
+        fn learn_ir_code(&self) -> HwResult<Option<u32>> {
+            Ok(None)
+        }
+        fn program_ir_code(&self, _code: u32) -> HwResult<()> {
             Ok(())
         }
     }

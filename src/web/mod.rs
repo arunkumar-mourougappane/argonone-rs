@@ -2,6 +2,7 @@
 //! auth/sessions, and a bare authenticated shell, per
 //! `docs/ROADMAP.md`'s v0.3.0 entry. No feature screens yet.
 
+mod audit;
 mod dashboard;
 mod fan_curve;
 mod login;
@@ -61,6 +62,11 @@ pub struct AppState {
     /// path — the live preview (`src/web/oled.rs`) and `/api/ws`'s
     /// `oled_screen` message both read from this.
     pub oled_screen: tokio::sync::watch::Receiver<Option<Screen>>,
+    /// Shared with the fan control loop (`service::run`) — the IR remote
+    /// learn/program endpoints (v0.6.0, `src/web/system.rs`) call
+    /// straight through to the same backend rather than round-tripping
+    /// through a watch channel, since `FanBackend` methods take `&self`.
+    pub fan: Arc<dyn crate::hardware::FanBackend>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -74,11 +80,28 @@ pub async fn build_router(
     rtc_schedule_tx: tokio::sync::watch::Sender<RtcSchedule>,
     oled_config_tx: tokio::sync::watch::Sender<OledConfig>,
     oled_screen: tokio::sync::watch::Receiver<Option<Screen>>,
+    fan: Arc<dyn crate::hardware::FanBackend>,
+    https_mode: crate::config::HttpsMode,
 ) -> Router {
     let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
         .fetch_one(&pool)
         .await
         .unwrap_or(0);
+
+    if user_count == 0 {
+        // A§1.1's exposure-window recommendation: `/setup` is
+        // unauthenticated by definition, so until the real admin claims
+        // it, print a one-time token here (and to the journal) that
+        // `/setup` requires as a query param — closes "first request on
+        // the LAN wins" without adding a step to the common single-user
+        // case.
+        let token = crate::db::settings::generate_and_store_setup_token(&pool).await;
+        tracing::warn!(
+            "first-run setup is open on this device and unauthenticated until claimed — visit \
+             /setup?token={token} to claim the admin account now (a fresh token replaces this one \
+             on every restart until setup completes)"
+        );
+    }
 
     let state = AppState {
         pool: pool.clone(),
@@ -92,6 +115,7 @@ pub async fn build_router(
         rtc_schedule_tx,
         oled_config_tx,
         oled_screen,
+        fan,
     };
 
     let session_store = SqliteStore::new(pool);
@@ -102,9 +126,10 @@ pub async fn build_router(
     let session_layer = SessionManagerLayer::new(session_store)
         .with_http_only(true)
         .with_same_site(SameSite::Lax)
-        // No HTTPS until v0.6.0 (A§4.4) — a `Secure` cookie would never be
-        // sent back over plain HTTP, breaking login entirely.
-        .with_secure(false)
+        // Tied to the active HTTPS mode (A§4.4) — a `Secure` cookie would
+        // never be sent back over plain HTTP, breaking login entirely, so
+        // this can't just default to `true` once HTTPS exists as an option.
+        .with_secure(https_mode != crate::config::HttpsMode::Off)
         .with_expiry(Expiry::OnInactivity(time::Duration::days(14)));
 
     let backend = Backend::new(state.pool.clone());
@@ -124,6 +149,7 @@ pub async fn build_router(
         )
         .route("/api/users/{id}/unlock", post(users::unlock))
         .route("/users", get(users::page))
+        .route("/audit", get(audit::page))
         .route("/api/users", get(users::list).post(users::create))
         .route("/api/users/{id}", delete(users::delete))
         .route("/api/users/{id}/role", put(users::update_role))
@@ -137,6 +163,16 @@ pub async fn build_router(
         .route(
             "/api/settings/units",
             get(system::get_units).put(system::put_units),
+        )
+        .route("/api/system/ir", get(system::get_ir))
+        .route("/api/system/ir/learn", post(system::learn_ir))
+        .route(
+            "/api/system/https",
+            get(system::get_https).put(system::put_https),
+        )
+        .route(
+            "/api/system/https/reissue",
+            post(system::reissue_https_cert),
         )
         .route(
             "/api/rtc/schedule",
@@ -194,4 +230,8 @@ async fn htmx_ws_js() -> impl IntoResponse {
 
 /// How often the status strip / WebSocket ticks, independent of the fan
 /// control loop's own 30s poll (W§2.5 — "a status strip that ticks").
-pub const WS_TICK_INTERVAL: Duration = Duration::from_secs(2);
+/// 1s (not the original 2s) so the dashboard's fan/network sparklines
+/// (v0.6.0) read as a smooth trend rather than a handful of visibly
+/// separate line segments — still far above the cost of the cheap
+/// `/proc` reads each tick does, even with several clients connected.
+pub const WS_TICK_INTERVAL: Duration = Duration::from_secs(1);

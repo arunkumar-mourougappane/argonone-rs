@@ -1,7 +1,323 @@
 {% extends "app_shell.html" %}
 {% block title %}Dashboard — argonone{% endblock %}
 {% block main %}
-<h1>Welcome, {{ username }}</h1>
-<p><span class="role-badge">{{ role }}</span></p>
-<p class="lede">Fan control, storage, and system settings are in the sidebar. The dashboard itself stays a light landing page for now — deeper live widgets (network throughput, load average, swap) land in v0.6.0.</p>
+<style>
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
+.grid .span2{grid-column:span 2;}
+@media (max-width:980px){.grid{grid-template-columns:1fr;}.grid .span2{grid-column:span 1;}}
+.grid .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px 20px;}
+.card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:10px;}
+.card-title{font-weight:600;font-size:13.5px;}
+.card-link{font-size:12px;color:var(--accent);text-decoration:none;font-weight:600;}
+.badge{font-family:var(--font-mono);font-size:10.5px;padding:3px 9px;border-radius:20px;font-weight:600;letter-spacing:.02em;}
+.badge.good{background:var(--good-soft);color:var(--good);}
+.badge.accent{background:var(--accent-soft);color:var(--accent);}
+.badge.neutral{background:var(--panel-2);color:var(--muted);}
+.big-stat{display:flex;align-items:baseline;gap:8px;margin-bottom:6px;}
+.big-stat .num{font-family:var(--font-mono);font-size:32px;font-weight:600;font-variant-numeric:tabular-nums;}
+.big-stat .num .unit{font-size:16px;color:var(--muted);}
+.sub-line{font-size:12px;color:var(--muted);margin:0 0 14px;}
+.spark{width:100%;height:44px;display:block;}
+.spark path.area{fill:var(--accent-soft);stroke:none;}
+.spark path.line{fill:none;stroke:var(--accent);stroke-width:1.6;}
+.rowlist{display:flex;flex-direction:column;gap:11px;}
+.rl-row{display:grid;grid-template-columns:110px 1fr 90px;align-items:center;gap:10px;}
+.rl-name{font-size:12.5px;font-weight:500;font-family:var(--font-mono);}
+.bar{height:6px;border-radius:4px;background:var(--panel-2);overflow:hidden;}
+.bar i{display:block;height:100%;border-radius:4px;background:var(--good);}
+.bar.warn i{background:var(--warn);}
+.bar.crit i{background:var(--crit);}
+.rl-val{font-family:var(--font-mono);font-size:11.5px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums;}
+.oled-thumb{background:#05070a;border-radius:8px;padding:14px;display:flex;align-items:center;justify-content:center;margin-bottom:12px;border:1px solid var(--border);}
+.oled-thumb canvas{width:100%;max-width:180px;image-rendering:pixelated;}
+.mini-table{width:100%;border-collapse:collapse;font-size:12.5px;}
+.mini-table td{padding:6px 0;border-top:1px solid var(--border);}
+.mini-table tr:first-child td{border-top:none;}
+.mini-table td:first-child{color:var(--muted);}
+.mini-table td:last-child{text-align:right;font-family:var(--font-mono);font-variant-numeric:tabular-nums;}
+.net-rates{display:flex;gap:20px;margin-bottom:10px;}
+.net-rate{display:flex;align-items:baseline;gap:5px;font-family:var(--font-mono);font-size:17px;font-weight:600;font-variant-numeric:tabular-nums;}
+.net-rate .unit{font-size:11px;color:var(--muted);font-weight:500;}
+.net-rate.down{color:var(--accent);}
+.net-rate.up{color:var(--text);}
+.live-indicator{font-family:var(--font-mono);font-size:11.5px;color:var(--muted);}
+
+/* Card entrance stagger + hover-lift, matching `03-dashboard.html` —
+   `fadeUp`/`.fade-up`/`flash` keyframes are shared (defined once in
+   base.html so every page can use them), this page just applies them
+   to its own grid. Gated behind prefers-reduced-motion like the mockup
+   gates it, including the hover-lift itself. */
+@media (prefers-reduced-motion: no-preference){
+  .grid > .card{transition:transform .15s ease, box-shadow .15s ease;opacity:0;animation:fadeUp .5s cubic-bezier(.16,1,.3,1) forwards;}
+  .grid > .card:hover{transform:translateY(-2px);box-shadow:var(--shadow);}
+  .grid > .card:nth-child(1){animation-delay:.06s} .grid > .card:nth-child(2){animation-delay:.10s}
+  .grid > .card:nth-child(3){animation-delay:.14s} .grid > .card:nth-child(4){animation-delay:.18s}
+  .grid > .card:nth-child(5){animation-delay:.22s} .grid > .card:nth-child(6){animation-delay:.26s}
+  .grid > .card:nth-child(7){animation-delay:.30s}
+}
+</style>
+
+<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-end;">
+  <div>
+    <h1>Dashboard</h1>
+    <p class="lede" style="margin:0;">{{ board_label }}{% if os %} · {{ os }}{% endif %} · argonone-rs {{ version }}</p>
+  </div>
+  <span class="live-indicator">Live · updated via WebSocket</span>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">Fan control</div>
+      <a class="card-link" href="/fan">Edit curve →</a>
+    </div>
+    <div class="big-stat">
+      <span class="num"><span id="fanPct">{{ current_fan_pct }}</span><span class="unit">%</span></span>
+      <span class="badge good" id="fanRampBadge" {% if target_fan_pct is none or target_fan_pct == current_fan_pct %}style="display:none;"{% endif %}>ramping to {{ target_fan_pct if target_fan_pct is not none else 0 }}%</span>
+    </div>
+    <p class="sub-line" id="fanSub">
+      {% if cpu_temp_c is not none %}CPU curve · driven by {{ cpu_temp_c | round(1) }}°C{% else %}CPU curve{% endif %}
+    </p>
+    <svg class="spark" id="fanSpark" viewBox="0 0 240 44" preserveAspectRatio="none">
+      <path class="area" id="fanSparkArea" d=""/>
+      <path class="line" id="fanSparkLine" d=""/>
+    </svg>
+  </div>
+
+  {% if is_eon %}
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">Power &amp; RTC</div>
+      <span class="badge accent">EON</span>
+    </div>
+    <table class="mini-table">
+      <tr><td>Next wake</td><td>{{ next_wake if next_wake else "Not scheduled" }}</td></tr>
+      <tr><td>Next sleep</td><td>{{ next_sleep if next_sleep else "Not scheduled" }}</td></tr>
+    </table>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">Network</div>
+      <span class="badge neutral" id="netIfaceBadge">--</span>
+    </div>
+    <div class="net-rates">
+      <div class="net-rate down"><span id="netDown">--</span><span class="unit" id="netDownUnit"></span></div>
+      <div class="net-rate up"><span id="netUp">--</span><span class="unit" id="netUpUnit"></span></div>
+    </div>
+    <svg class="spark" id="netSpark" viewBox="0 0 240 44" preserveAspectRatio="none">
+      <path class="area" id="netSparkArea" d=""/>
+      <path class="line" id="netSparkLine" d=""/>
+    </svg>
+    <p class="sub-line" id="netSub" style="margin:8px 0 0;">measuring…</p>
+  </div>
+
+  <div class="card span2">
+    <div class="card-head">
+      <div class="card-title">Storage</div>
+      <a class="card-link" href="/storage">View all →</a>
+    </div>
+    <div class="rowlist">
+      {% for d in disk_rows %}
+      <div class="rl-row">
+        <span class="rl-name">{{ d.label }}</span>
+        <div class="bar {{ d.severity }}"><i style="width:{{ d.used_pct if d.used_pct is not none else 0 }}%"></i></div>
+        <span class="rl-val">{{ d.used_pct ~ "%" if d.used_pct is not none else "—" }}{% if d.temp_display %} · {{ d.temp_display }}{% endif %}</span>
+      </div>
+      {% else %}
+      <p class="sub-line" style="margin:0;">No disks detected.</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if is_eon %}
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">Display</div>
+      <a class="card-link" href="/display">Configure →</a>
+    </div>
+    <div class="oled-thumb">
+      <canvas id="oledThumbCanvas" width="128" height="64"></canvas>
+    </div>
+    <p class="sub-line" style="margin-bottom:0;">Now showing: <span id="oledNowShowing">—</span></p>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="card-head"><div class="card-title">System</div></div>
+    <table class="mini-table">
+      <tr><td>Load avg</td><td id="sysLoadAvg">-- · -- · --</td></tr>
+      <tr><td>Swap</td><td id="sysSwap">--</td></tr>
+      <tr><td>Units</td><td>{{ unit }}</td></tr>
+      <tr><td>argonone-rs</td><td>{{ version }}</td></tr>
+      <tr><td>Service</td><td><span class="badge good">running</span></td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div class="card-title">Signed in as</div></div>
+    <table class="mini-table">
+      <tr><td>User</td><td>{% if full_user and (full_user.first_name or full_user.last_name) %}{{ full_user.first_name }} {{ full_user.last_name }}{% else %}{{ username }}{% endif %}</td></tr>
+      <tr><td>Username</td><td>@{{ username }}</td></tr>
+      <tr><td>Role</td><td><span class="badge accent">{{ role | capitalize }}</span></td></tr>
+      <tr><td>Last login</td><td>{{ full_user.last_login_at if full_user and full_user.last_login_at else "Never" }}</td></tr>
+    </table>
+  </div>
+</div>
+{% endblock %}
+{% block page_script %}
+<script>
+function formatRate(bytesPerSec) {
+  if (bytesPerSec == null) return { value: '--', unit: '' };
+  if (bytesPerSec >= 1048576) return { value: (bytesPerSec / 1048576).toFixed(1), unit: 'MB/s' };
+  if (bytesPerSec >= 1024) return { value: (bytesPerSec / 1024).toFixed(1), unit: 'KB/s' };
+  return { value: String(bytesPerSec), unit: 'B/s' };
+}
+
+// Rolling in-browser history for the two sparklines — reset on every page
+// load/reconnect, not persisted server-side; "recent trend since this tab
+// connected" is enough for a glanceable spark, and avoids adding a
+// server-held time-series buffer for a decorative chart. 60 points at the
+// WS's 1s tick (`WS_TICK_INTERVAL`) covers the same ~60s window the
+// original 30-point/2s-tick pairing did, just at twice the resolution —
+// smoother line, same visible timespan.
+const SPARK_POINTS = 60;
+const fanHistory = [];
+const netHistory = []; // { rx, tx } per tick
+
+function sparklinePaths(values, maxValue) {
+  if (values.length < 2 || maxValue <= 0) return { line: '', area: '' };
+  const stepX = 240 / (SPARK_POINTS - 1);
+  const offset = SPARK_POINTS - values.length;
+  const points = values.map((v, i) => {
+    const x = (offset + i) * stepX;
+    const y = 42 - (Math.min(v, maxValue) / maxValue) * 38;
+    return [x, y];
+  });
+  const line = points.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  const area = `${line} L${points[points.length - 1][0].toFixed(1)},44 L${points[0][0].toFixed(1)},44 Z`;
+  return { line, area };
+}
+
+function pushCapped(arr, value) {
+  arr.push(value);
+  if (arr.length > SPARK_POINTS) arr.shift();
+}
+
+document.body.addEventListener('htmx:wsAfterMessage', function (evt) {
+  var data;
+  try { data = JSON.parse(evt.detail.message); } catch (e) { return; }
+
+  if (data.type === 'fan_state') {
+    const fanPctEl = document.getElementById('fanPct');
+    fanPctEl.textContent = data.current_pct;
+    flash(fanPctEl.closest('.big-stat'));
+    pushCapped(fanHistory, data.current_pct);
+    const { line, area } = sparklinePaths(fanHistory, 100);
+    document.getElementById('fanSparkLine').setAttribute('d', line);
+    document.getElementById('fanSparkArea').setAttribute('d', area);
+
+    const rampBadge = document.getElementById('fanRampBadge');
+    const ramping = data.target_pct != null && data.target_pct !== data.current_pct;
+    if (ramping) {
+      rampBadge.textContent = 'ramping to ' + data.target_pct + '%';
+      rampBadge.style.display = '';
+    } else {
+      rampBadge.style.display = 'none';
+    }
+  }
+
+  if (data.type !== 'stats') return;
+
+  const fanSub = document.getElementById('fanSub');
+  if (data.cpu_temp_c != null) {
+    fanSub.textContent = 'CPU curve · driven by ' + data.cpu_temp_c.toFixed(1) + '°C';
+  }
+
+  if (data.load_avg_1 != null) {
+    const loadAvgEl = document.getElementById('sysLoadAvg');
+    loadAvgEl.textContent =
+      data.load_avg_1.toFixed(2) + ' · ' + data.load_avg_5.toFixed(2) + ' · ' + data.load_avg_15.toFixed(2);
+    flash(loadAvgEl);
+  }
+
+  if (data.swap_total_kb != null) {
+    var swapEl = document.getElementById('sysSwap');
+    if (data.swap_total_kb === 0) {
+      swapEl.textContent = 'None configured';
+    } else {
+      swapEl.textContent = data.swap_used_pct.toFixed(0) + '% · ' + (data.swap_used_kb / 1048576).toFixed(2) + ' GB';
+    }
+    flash(swapEl);
+  }
+
+  var ifaceBadge = document.getElementById('netIfaceBadge');
+  var netSub = document.getElementById('netSub');
+  if (data.net_iface) {
+    ifaceBadge.textContent = data.net_iface;
+    const down = formatRate(data.net_rx_bytes_per_sec);
+    const up = formatRate(data.net_tx_bytes_per_sec);
+    document.getElementById('netDown').textContent = down.value;
+    document.getElementById('netDownUnit').textContent = down.unit;
+    document.getElementById('netUp').textContent = up.value;
+    document.getElementById('netUpUnit').textContent = up.unit;
+    flash(document.getElementById('netDown').closest('.net-rate'));
+    flash(document.getElementById('netUp').closest('.net-rate'));
+    netSub.textContent = data.ip_address || '';
+
+    pushCapped(netHistory, Math.max(data.net_rx_bytes_per_sec || 0, data.net_tx_bytes_per_sec || 0));
+    const maxSeen = Math.max(1024, ...netHistory);
+    const { line, area } = sparklinePaths(netHistory, maxSeen);
+    document.getElementById('netSparkLine').setAttribute('d', line);
+    document.getElementById('netSparkArea').setAttribute('d', area);
+  } else {
+    netSub.textContent = 'measuring…';
+  }
+});
+</script>
+{% if is_eon %}
+<script>
+// Live OLED thumbnail: same packed-bit framebuffer + canvas approach as
+// the Display page's own live preview (`templates/oled.html`), just
+// smaller — refetched whenever the WS `oled_screen` message says the
+// selected screen changed, server-rendered from the real `draw_screen`
+// function rather than simulated.
+const OLED_LABELS = {
+  clock: 'Clock', ip: 'IP address', cpu: 'CPU usage', ram: 'RAM usage',
+  storage: 'Storage', temp: 'Temperature', raid: 'RAID status', splash: 'argonone logo',
+};
+const thumbCanvas = document.getElementById('oledThumbCanvas');
+const thumbCtx = thumbCanvas.getContext('2d');
+const nowShowingEl = document.getElementById('oledNowShowing');
+
+function drawThumbBits(bits) {
+  const img = thumbCtx.createImageData(128, 64);
+  for (let i = 0; i < 128 * 64; i++) {
+    const on = bits ? ((bits[i >> 3] >> (7 - (i % 8))) & 1) === 1 : false;
+    const o = i * 4;
+    if (on) { img.data[o] = 143; img.data[o + 1] = 211; img.data[o + 2] = 255; img.data[o + 3] = 255; }
+    else { img.data[o] = 5; img.data[o + 1] = 7; img.data[o + 2] = 10; img.data[o + 3] = 255; }
+  }
+  thumbCtx.putImageData(img, 0, 0);
+}
+
+async function refreshOledThumb() {
+  const resp = await fetch('/api/oled/preview');
+  if (!resp.ok) return;
+  const data = await resp.json();
+  drawThumbBits(data.bits);
+  nowShowingEl.textContent = data.screen ? (OLED_LABELS[data.screen] || data.screen) : 'nothing (blanked)';
+}
+
+document.body.addEventListener('htmx:wsAfterMessage', function (evt) {
+  let data;
+  try { data = JSON.parse(evt.detail.message); } catch (e) { return; }
+  if (data.type === 'oled_screen') refreshOledThumb();
+});
+
+refreshOledThumb();
+setInterval(refreshOledThumb, 5000);
+</script>
+{% endif %}
 {% endblock %}

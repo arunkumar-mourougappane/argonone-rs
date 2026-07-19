@@ -24,6 +24,10 @@ pub struct StatusResponse {
     unit: &'static str,
     ram_used_pct: Option<f32>,
     fan_pct: u8,
+    load_avg_1: Option<f32>,
+    load_avg_5: Option<f32>,
+    load_avg_15: Option<f32>,
+    swap_used_pct: Option<f32>,
 }
 
 pub async fn status(State(state): State<AppState>) -> Json<StatusResponse> {
@@ -45,6 +49,8 @@ pub async fn status(State(state): State<AppState>) -> Json<StatusResponse> {
     cpu.sample_percent();
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     let cpu_pct = cpu.sample_percent();
+    let mem = sysinfo::read_mem_info();
+    let load_avg = sysinfo::read_load_avg();
 
     Json(StatusResponse {
         status: "ok",
@@ -53,7 +59,11 @@ pub async fn status(State(state): State<AppState>) -> Json<StatusResponse> {
         cpu_pct,
         cpu_temp_c: sysinfo::read_cpu_temp_c(),
         unit,
-        ram_used_pct: sysinfo::read_mem_info().map(|m| m.used_percent()),
+        ram_used_pct: mem.map(|m| m.used_percent()),
         fan_pct: *state.fan_speed.borrow(),
+        load_avg_1: load_avg.map(|l| l.one),
+        load_avg_5: load_avg.map(|l| l.five),
+        load_avg_15: load_avg.map(|l| l.fifteen),
+        swap_used_pct: mem.map(|m| m.swap_used_percent()),
     })
 }

@@ -7,6 +7,7 @@ use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 use std::path::Path;
 
+pub mod audit;
 pub mod settings;
 pub mod users;
 

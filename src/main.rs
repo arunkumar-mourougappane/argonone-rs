@@ -5,6 +5,7 @@ mod config;
 mod db;
 mod fan;
 mod hardware;
+mod https;
 mod oled;
 mod rtc_schedule;
 mod service;

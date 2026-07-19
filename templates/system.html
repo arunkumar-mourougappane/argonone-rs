@@ -27,10 +27,25 @@ table.sched td{padding:9px 10px;border-bottom:1px solid var(--border);}
 .day-toggle.on{background:var(--accent-soft);color:var(--accent);border-color:var(--accent);}
 .new-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:12px;}
 .new-row input[type=time]{padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:12.5px;}
+.tls-option{border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:10px;cursor:pointer;}
+.tls-option.selected{border-color:var(--accent);background:var(--accent-soft);}
+.tls-option-head{display:flex;align-items:flex-start;gap:10px;}
+.tls-radio{width:16px;height:16px;border-radius:50%;border:2px solid var(--border);flex:none;margin-top:2px;}
+.tls-option.selected .tls-radio{border-color:var(--accent);background:radial-gradient(circle,var(--accent) 0 40%,transparent 44%);}
+.tls-option-title{font-weight:600;font-size:13.5px;}
+.tls-option-desc{color:var(--muted);font-size:12px;margin-top:2px;}
+.tls-detail{margin-top:12px;padding-left:26px;display:none;}
+.tls-option.selected .tls-detail{display:block;}
+.tls-detail input[type=text]{width:100%;padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--panel);color:var(--text);font-family:var(--font-mono);font-size:12.5px;}
+.tls-note{display:flex;gap:8px;color:var(--warn);font-size:12px;margin-top:10px;}
+.tls-note svg{flex:none;margin-top:1px;}
+.restart-note{color:var(--muted);font-size:12px;margin-top:14px;}
+.expiring{color:var(--warn);font-weight:600;}
+.active-badge{background:var(--good-soft);color:var(--good);}
 </style>
 <div class="page-head">
   <h1>System</h1>
-  <p class="lede">Units, firmware/service info{% if is_eon %}, and the Power &amp; RTC schedule{% endif %}. IR remote and HTTPS land in later milestones.</p>
+  <p class="lede">Units, firmware/service info{% if is_eon %}, and the Power &amp; RTC schedule{% endif %}{% if has_case %}, and the IR remote{% endif %}, and HTTPS.</p>
 </div>
 
 <div class="card">
@@ -67,6 +82,94 @@ table.sched td{padding:9px 10px;border-bottom:1px solid var(--border);}
   </div>
   <div class="err" id="schedErr"></div>
   {% endif %}
+</div>
+{% endif %}
+
+{% if has_case %}
+<div class="card">
+  <div class="card-title">IR remote</div>
+  <p class="card-sub">Program the case's IR receiver to respond to a remote's power button.</p>
+  <div class="row" style="display:flex;align-items:center;justify-content:space-between;">
+    <div>
+      <div style="font-weight:600;font-size:13.5px;" id="irLabel">{{ "Learned code" if ir_code else "Not configured" }}</div>
+      <div style="color:var(--muted);font-size:12px;" id="irSub">{{ ("0x" ~ ir_code) if ir_code else "None configured" }}</div>
+    </div>
+    {% if can_edit %}<button class="btn" id="learnIrBtn" type="button">{{ "Re-learn" if ir_code else "Learn code" }}</button>{% endif %}
+  </div>
+  <div class="err" id="irErr"></div>
+</div>
+{% endif %}
+
+{% if is_admin %}
+<div class="card" id="httpsCard" data-active-mode="{{ https_mode }}" data-active-domain="{{ https_domain or '' }}" data-active-email="{{ https_email or '' }}">
+  <div class="card-title">HTTPS &amp; remote access</div>
+  <p class="card-sub">Encrypt the connection to this device. Changing this takes effect on the next daemon restart, not immediately.</p>
+
+  <div class="tls-option {% if https_mode == 'tailscale' %}selected{% endif %}" data-mode="tailscale">
+    <div class="tls-option-head">
+      <div class="tls-radio"></div>
+      <div>
+        <div class="tls-option-title">Tailscale <span class="badge wake">Recommended</span>{% if https_mode == 'tailscale' %} <span class="badge active-badge">Active</span>{% endif %}</div>
+        <div class="tls-option-desc">Automatic, browser-trusted certificate for this device's tailnet address via <code>tailscale cert</code>. No ports opened to the internet.</div>
+      </div>
+    </div>
+    <div class="tls-detail">
+      <div class="field"><label>Tailnet address (MagicDNS name)</label>
+        <input type="text" id="tsDomain" placeholder="rpi01.tailxxxx.ts.net" value="{{ https_domain if https_mode == 'tailscale' else '' }}">
+      </div>
+      {% if https_mode == 'tailscale' %}
+        {% if cert_status %}
+        <table class="kv">
+          <tr><td>Issuer</td><td>{{ cert_status.issuer }}</td></tr>
+          <tr><td>Expires</td><td class="{% if cert_status.days_until_expiry < 30 %}expiring{% endif %}">{{ cert_status.expires_at }} ({{ cert_status.days_until_expiry }}&nbsp;days)</td></tr>
+          <tr><td>Auto-renew</td><td><span class="badge wake">enabled</span></td></tr>
+        </table>
+        <div class="row" style="display:flex;align-items:center;justify-content:space-between;padding-top:12px;">
+          <div><div style="font-weight:600;font-size:12.5px;">Certificate active</div><div style="color:var(--muted);font-size:12px;">Issued via <code>tailscale cert</code>; the daemon re-checks and renews it automatically about once a day.</div></div>
+          <button class="btn ghost" id="reissueBtn" type="button">Re-issue now</button>
+        </div>
+        {% else %}
+        <p class="restart-note" style="margin-top:12px;">No certificate on file yet — save this mode (if not already saved) and restart <code>argonone-rs</code> to issue one.</p>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="tls-option {% if https_mode == 'acme' %}selected{% endif %}" data-mode="acme">
+    <div class="tls-option-head">
+      <div class="tls-radio"></div>
+      <div>
+        <div class="tls-option-title">Custom domain (Let's Encrypt){% if https_mode == 'acme' %} <span class="badge active-badge">Active</span>{% endif %}</div>
+        <div class="tls-option-desc">Automatic certificate for a domain you own, pointed at this device.</div>
+      </div>
+    </div>
+    <div class="tls-detail">
+      <div class="field"><label>Domain</label>
+        <input type="text" id="acmeDomain" placeholder="argon.example.com" value="{{ https_domain if https_mode == 'acme' else '' }}">
+      </div>
+      <div class="field"><label>Contact email (optional)</label>
+        <input type="text" id="acmeEmail" placeholder="you@example.com" value="{{ https_email if https_mode == 'acme' else '' }}">
+      </div>
+      <div class="tls-note">
+        <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 2 2 17h16z"/><path d="M10 8v4M10 14v.01"/></svg>
+        <p>Requires port 443 forwarded from your router to this device — opens it to the public internet. Prefer Tailscale unless you specifically need this.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="tls-option {% if https_mode == 'off' %}selected{% endif %}" data-mode="off">
+    <div class="tls-option-head">
+      <div class="tls-radio"></div>
+      <div>
+        <div class="tls-option-title">HTTP only{% if https_mode == 'off' %} <span class="badge active-badge">Active</span>{% endif %}</div>
+        <div class="tls-option-desc">No encryption on this network. Traffic — including your password — is readable by anyone else on the LAN. There's no browser-trusted certificate possible without Tailscale or a domain — a self-signed one would still show a browser warning.</div>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn" id="saveHttpsBtn" type="button" disabled>Save</button>
+  <div class="err" id="httpsErr"></div>
+  <p class="restart-note">Restart <code>argonone-rs</code> (or the systemd unit) for a mode change to take effect.</p>
 </div>
 {% endif %}
 
@@ -198,6 +301,126 @@ if (CAN_EDIT_SCHED) {
     const [h, m] = document.getElementById('newTime').value.split(':').map(Number);
     schedule.entries.push({ kind: selectedKind, days: selectedDays, hour: h, minute: m });
     saveSchedule();
+  });
+}
+</script>
+{% endif %}
+{% if has_case and can_edit %}
+<script>
+document.getElementById('learnIrBtn').addEventListener('click', async function () {
+  const errEl = document.getElementById('irErr');
+  const label = document.getElementById('irLabel');
+  const sub = document.getElementById('irSub');
+  errEl.textContent = '';
+  this.disabled = true;
+  const previousBtnLabel = this.textContent;
+  const previousSub = sub.textContent;
+  this.textContent = 'Listening…';
+  sub.textContent = "Press the power button on your remote";
+
+  const resp = await fetch('/api/system/ir/learn', { method: 'POST' });
+  const data = await resp.json().catch(() => ({}));
+  this.disabled = false;
+
+  if (!resp.ok) {
+    errEl.textContent = data.error || `learn failed (${resp.status})`;
+    this.textContent = previousBtnLabel;
+    sub.textContent = previousSub;
+    return;
+  }
+
+  label.textContent = 'Learned code';
+  sub.textContent = '0x' + data.code;
+  this.textContent = 'Re-learn';
+  showToast('IR code learned');
+});
+</script>
+{% endif %}
+{% if is_admin %}
+<script>
+const httpsCard = document.getElementById('httpsCard');
+const savedHttps = {
+  mode: httpsCard.dataset.activeMode,
+  domain: httpsCard.dataset.activeDomain,
+  email: httpsCard.dataset.activeEmail,
+};
+const saveHttpsBtn = document.getElementById('saveHttpsBtn');
+
+function currentHttpsSelection() {
+  const selected = document.querySelector('.tls-option.selected');
+  const mode = selected ? selected.getAttribute('data-mode') : 'off';
+  let domain = '', email = '';
+  if (mode === 'tailscale') {
+    domain = document.getElementById('tsDomain').value.trim();
+  } else if (mode === 'acme') {
+    domain = document.getElementById('acmeDomain').value.trim();
+    email = document.getElementById('acmeEmail').value.trim();
+  }
+  return { mode, domain, email };
+}
+
+// Only the mode that's actually saved and running takes effect — a
+// selection that merely differs from it is a pending change, not yet
+// real, so Save stays disabled until something's actually different.
+function updateHttpsDirtyState() {
+  const sel = currentHttpsSelection();
+  const dirty = sel.mode !== savedHttps.mode || sel.domain !== savedHttps.domain || sel.email !== savedHttps.email;
+  saveHttpsBtn.disabled = !dirty;
+}
+
+document.querySelectorAll('.tls-option').forEach(opt => {
+  opt.addEventListener('click', (evt) => {
+    if (evt.target.tagName === 'INPUT') return;
+    document.querySelectorAll('.tls-option').forEach(o => o.classList.remove('selected'));
+    opt.classList.add('selected');
+    updateHttpsDirtyState();
+  });
+});
+['tsDomain', 'acmeDomain', 'acmeEmail'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('input', updateHttpsDirtyState);
+});
+updateHttpsDirtyState();
+
+saveHttpsBtn.addEventListener('click', async () => {
+  const errEl = document.getElementById('httpsErr');
+  errEl.textContent = '';
+  const sel = currentHttpsSelection();
+
+  const resp = await fetch('/api/system/https', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: sel.mode, domain: sel.domain || null, email: sel.email || null }),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    errEl.textContent = data.error || `save failed (${resp.status})`;
+    return;
+  }
+  showToast('HTTPS setting saved — restart argonone-rs to apply');
+  setTimeout(() => window.location.reload(), 1400);
+});
+
+const reissueBtn = document.getElementById('reissueBtn');
+if (reissueBtn) {
+  reissueBtn.addEventListener('click', async () => {
+    const errEl = document.getElementById('httpsErr');
+    errEl.textContent = '';
+    reissueBtn.disabled = true;
+    const previousText = reissueBtn.textContent;
+    reissueBtn.textContent = 'Re-issuing…';
+
+    const resp = await fetch('/api/system/https/reissue', { method: 'POST' });
+    const data = await resp.json().catch(() => ({}));
+    reissueBtn.disabled = false;
+    reissueBtn.textContent = previousText;
+
+    if (!resp.ok) {
+      errEl.textContent = data.error || `re-issue failed (${resp.status})`;
+      return;
+    }
+    showToast('Certificate re-issued');
+    setTimeout(() => window.location.reload(), 1200);
   });
 }
 </script>

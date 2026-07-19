@@ -17,15 +17,19 @@ fn week_minutes(weekday: u8, hour: u8, minute: u8) -> i32 {
     weekday as i32 * 24 * 60 + hour as i32 * 60 + minute as i32
 }
 
-/// The soonest `Wake` entry strictly after `after`, wrapping at the week
-/// boundary if nothing matches later this week. Returns `(weekday, hour,
-/// minute)` — exactly the arguments [`crate::hardware::RtcBackend::set_wake_alarm`]
-/// needs. `None` if there are no `Wake` entries (or none with any day bit set).
-pub fn next_wake(entries: &[RtcScheduleEntry], after: RtcDateTime) -> Option<(u8, u8, u8)> {
+/// The soonest entry of `kind` strictly after `after`, wrapping at the
+/// week boundary if nothing matches later this week. Returns `(weekday,
+/// hour, minute)`. `None` if there are no entries of that kind (or none
+/// with any day bit set).
+pub fn next_occurrence(
+    entries: &[RtcScheduleEntry],
+    after: RtcDateTime,
+    kind: RtcEventKind,
+) -> Option<(u8, u8, u8)> {
     let after_minutes = week_minutes(after.weekday, after.hour, after.minute);
     let mut best: Option<(i32, u8, u8, u8)> = None;
 
-    for entry in entries.iter().filter(|e| e.kind == RtcEventKind::Wake) {
+    for entry in entries.iter().filter(|e| e.kind == kind) {
         for weekday in 0..7u8 {
             if entry.days & (1 << weekday) == 0 {
                 continue;
@@ -46,6 +50,21 @@ pub fn next_wake(entries: &[RtcScheduleEntry], after: RtcDateTime) -> Option<(u8
     }
 
     best.map(|(_, weekday, hour, minute)| (weekday, hour, minute))
+}
+
+/// The soonest `Wake` entry strictly after `after` — exactly the
+/// arguments [`crate::hardware::RtcBackend::set_wake_alarm`] needs.
+pub fn next_wake(entries: &[RtcScheduleEntry], after: RtcDateTime) -> Option<(u8, u8, u8)> {
+    next_occurrence(entries, after, RtcEventKind::Wake)
+}
+
+/// The soonest `Sleep` entry strictly after `after` — the dashboard's
+/// "Next sleep" row (v0.6.0). Unlike [`matching_sleep_entry`] (an exact
+/// "does `now` match" check the shutdown-trigger poll uses), this is a
+/// forward-looking "when next" query, the same shape [`next_wake`]
+/// already answers for wake alarms.
+pub fn next_sleep(entries: &[RtcScheduleEntry], after: RtcDateTime) -> Option<(u8, u8, u8)> {
+    next_occurrence(entries, after, RtcEventKind::Sleep)
 }
 
 /// The `Sleep` entry (if any) matching `now` exactly — same day-of-week and
@@ -143,6 +162,20 @@ mod tests {
     #[test]
     fn next_wake_none_when_no_entries() {
         assert_eq!(next_wake(&[], dt(2, 5, 0)), None);
+    }
+
+    #[test]
+    fn next_sleep_picks_soonest_and_ignores_wake_entries() {
+        let entries = vec![wake(0x7f, 6, 30), sleep(0x7f, 23, 0)];
+        assert_eq!(next_sleep(&entries, dt(2, 5, 0)), Some((2, 23, 0)));
+    }
+
+    #[test]
+    fn next_sleep_wraps_to_next_week_when_nothing_later_this_week() {
+        // Only fires Mondays at 23:00; asking from Monday 23:30 should
+        // wrap forward to next Monday, not return None.
+        let entries = vec![sleep(0b0000010, 23, 0)];
+        assert_eq!(next_sleep(&entries, dt(1, 23, 30)), Some((1, 23, 0)));
     }
 
     #[test]
