@@ -152,9 +152,16 @@ pub async fn learn_ir(auth_session: AuthSession, State(state): State<AppState>) 
         return StatusCode::FORBIDDEN.into_response();
     }
 
-    let learned = match state.fan.learn_ir_code() {
-        Ok(code) => code,
-        Err(e) => {
+    // learn_ir_code blocks for the whole listen window (a fixed sleep plus
+    // blocking I2C calls, see i2c.rs) — run it on a blocking-pool thread
+    // rather than inline in this async handler, which would otherwise
+    // stall the tokio runtime (the dashboard, WS ticks, every other
+    // user's requests) for the entire window. Matches the same pattern
+    // reissue_https_cert already uses for its own blocking subprocess call.
+    let fan = state.fan.clone();
+    let learned = match tokio::task::spawn_blocking(move || fan.learn_ir_code()).await {
+        Ok(Ok(code)) => code,
+        Ok(Err(e)) => {
             tracing::error!(error = %e, "IR learn failed");
             return (
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -163,6 +170,10 @@ pub async fn learn_ir(auth_session: AuthSession, State(state): State<AppState>) 
                 }),
             )
                 .into_response();
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "IR learn task panicked");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
     };
 

@@ -731,6 +731,112 @@ async fn viewer_cannot_trigger_ir_learn_but_operator_can() {
     assert_eq!(json["code"], serde_json::Value::Null);
 }
 
+/// A [`crate::hardware::FanBackend`] whose `learn_ir_code` blocks the
+/// calling thread for a while, standing in for the real I2C backend's
+/// fixed listen window.
+struct SlowLearnFan;
+
+impl crate::hardware::FanBackend for SlowLearnFan {
+    fn capability(&self) -> crate::hardware::FanCapability {
+        crate::hardware::FanCapability::Registers
+    }
+    fn set_speed(&self, _percent: u8) -> crate::hardware::HwResult<()> {
+        Ok(())
+    }
+    fn signal_poweroff(&self) -> crate::hardware::HwResult<()> {
+        Ok(())
+    }
+    fn learn_ir_code(&self) -> crate::hardware::HwResult<Option<u32>> {
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        Ok(Some(0x1234))
+    }
+    fn program_ir_code(&self, _code: u32) -> crate::hardware::HwResult<()> {
+        Ok(())
+    }
+}
+
+/// #[tokio::test] defaults to a single-threaded (current-thread) runtime,
+/// so a handler that blocks its calling thread instead of using
+/// `spawn_blocking` would stall every other task on the runtime for the
+/// entire IR listen window — including this test's own concurrently
+/// spawned lightweight request. Proves the `spawn_blocking` fix in
+/// `system::learn_ir` actually offloads the blocking call rather than
+/// just happening to compile.
+#[tokio::test]
+async fn ir_learn_does_not_block_other_requests_on_the_runtime() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = Box::leak(Box::new(dir)).path().join("t.db");
+    let pool = crate::db::connect(&path).await.unwrap();
+    let (_tx, rx) = tokio::sync::watch::channel(0u8);
+    let (cpu_tx, _) = tokio::sync::watch::channel(crate::config::FanCurve::default_curve());
+    let (hdd_tx, _) = tokio::sync::watch::channel(crate::config::FanCurve::default_curve());
+    let (units_tx, _) = tokio::sync::watch::channel(crate::config::TempUnit::Celsius);
+    let (rtc_schedule_tx, _) = tokio::sync::watch::channel(crate::config::RtcSchedule::disabled());
+    let (oled_config_tx, _) =
+        tokio::sync::watch::channel(crate::config::OledConfig::default_config());
+    let (_oled_screen_tx, oled_screen_rx) =
+        tokio::sync::watch::channel(None::<crate::oled::Screen>);
+    let router = build_router(
+        pool.clone(),
+        crate::hardware::board::Board::Eon,
+        rx,
+        cpu_tx,
+        hdd_tx,
+        units_tx,
+        rtc_schedule_tx,
+        oled_config_tx,
+        oled_screen_rx,
+        std::sync::Arc::new(SlowLearnFan),
+        crate::config::HttpsMode::Off,
+    )
+    .await;
+
+    let cookie = seed_and_login(&router, &pool, "op1", "operator").await;
+
+    // Spawned first so a buggy (non-offloaded) handler — which blocks its
+    // poll() call synchronously with no `.await` boundary — gets scheduled
+    // and monopolizes the single worker thread before the lightweight task
+    // below ever gets a chance to run.
+    let learn_router = router.clone();
+    let learn_cookie = cookie.clone();
+    let learn_task = tokio::spawn(async move {
+        learn_router
+            .oneshot(empty_request("POST", "/api/system/ir/learn", &learn_cookie))
+            .await
+            .unwrap()
+    });
+
+    // Not `/api/status`: that handler has its own deliberate 200ms sleep
+    // (CPU-usage sampling window) that would swamp this test's timing
+    // budget regardless of the IR-learn fix. `/api/system/ir` is a plain
+    // DB read with no artificial delay of its own. Timed from inside its
+    // own spawned task (not from the calling task) so the measurement
+    // reflects when this task actually got to run, not just when it was
+    // queued — a task queued behind a thread-hogging poll() doesn't run
+    // until that poll returns, no matter when `tokio::spawn` was called.
+    let status_router = router.clone();
+    let status_cookie = cookie.clone();
+    let status_task = tokio::spawn(async move {
+        let start = tokio::time::Instant::now();
+        let resp = status_router
+            .oneshot(empty_request("GET", "/api/system/ir", &status_cookie))
+            .await
+            .unwrap();
+        (resp, start.elapsed())
+    });
+
+    let (status_resp, elapsed) = status_task.await.unwrap();
+    assert_eq!(status_resp.status(), StatusCode::OK);
+    assert!(
+        elapsed < std::time::Duration::from_millis(200),
+        "a concurrent lightweight request took {elapsed:?} — the IR-learn \
+         handler is blocking the runtime instead of offloading via spawn_blocking"
+    );
+
+    let learn_resp = learn_task.await.unwrap();
+    assert_eq!(learn_resp.status(), StatusCode::OK);
+}
+
 #[tokio::test]
 async fn https_config_defaults_to_off_and_operator_cannot_change_it() {
     let (router, pool) = test_router().await;
