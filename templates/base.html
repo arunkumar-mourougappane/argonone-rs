@@ -77,6 +77,14 @@ main{flex:1;min-width:0;display:flex;flex-direction:column;}
 .status-strip .stat-label{font-family:var(--font-mono);font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px;}
 .status-strip .stat-value{font-family:var(--font-mono);font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;display:flex;align-items:baseline;gap:5px;}
 .status-strip .stat-value .unit{font-size:12px;color:var(--muted);font-weight:500;}
+/* Fixed-width trend slot (not variable "· ramping" text) so the Fan
+   column's width never shifts as the fan catches up to the curve's
+   target — reserved via `visibility`, not `display`, so the box always
+   takes up the same space whether or not a trend is currently shown. */
+.status-strip .stat-value .trend{display:inline-block;width:11px;text-align:center;font-size:13px;line-height:1;font-weight:700;}
+.status-strip .stat-value .trend.steady{visibility:hidden;}
+.status-strip .stat-value .trend.up{color:var(--accent);}
+.status-strip .stat-value .trend.down{color:var(--muted);}
 .status-strip .dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:2px;background:var(--good);position:relative;}
 .status-strip .dot.warn{background:var(--warn);}
 .status-strip .dot.crit{background:var(--crit);}

@@ -37,7 +37,7 @@
   <main>
     <div id="status-strip" class="status-strip fade-up" hx-ext="ws" ws-connect="/api/ws">
       <div class="stat"><div class="stat-label">CPU temp</div><div class="stat-value"><span class="dot live" id="dot-cpu-temp"></span><span id="stat-cpu-temp">--</span></div></div>
-      <div class="stat"><div class="stat-label">Fan</div><div class="stat-value"><span class="dot live" id="dot-fan"></span><span id="stat-fan-pct">--</span></div></div>
+      <div class="stat"><div class="stat-label">Fan</div><div class="stat-value"><span class="dot live" id="dot-fan"></span><span id="stat-fan-pct">--</span><span class="trend steady" id="fan-trend">&#9650;</span></div></div>
       <div class="stat"><div class="stat-label">RAM</div><div class="stat-value" id="stat-ram">--</div></div>
       <div class="stat"><div class="stat-label">IP address</div><div class="stat-value" id="stat-ip">--</div></div>
       <div class="stat"><div class="stat-label">Uptime</div><div class="stat-value" id="stat-uptime">--</div></div>
@@ -112,9 +112,18 @@ document.body.addEventListener('htmx:wsAfterMessage', function (evt) {
     document.getElementById('stat-uptime').textContent = formatUptime(data.uptime_secs);
   } else if (data.type === 'fan_state') {
     var fanEl = document.getElementById('stat-fan-pct');
-    var ramping = data.target_pct != null && data.target_pct !== data.current_pct;
-    fanEl.textContent = data.current_pct + '%' + (ramping ? ' · ramping' : '');
+    fanEl.textContent = data.current_pct + '%';
     flash(fanEl.closest('.stat-value'));
+    var trendEl = document.getElementById('fan-trend');
+    if (data.target_pct == null || data.target_pct === data.current_pct) {
+      trendEl.className = 'trend steady';
+    } else if (data.target_pct > data.current_pct) {
+      trendEl.textContent = '▲';
+      trendEl.className = 'trend up';
+    } else {
+      trendEl.textContent = '▼';
+      trendEl.className = 'trend down';
+    }
   } else if (data.type === 'host') {
     document.getElementById('brand-host').textContent = data.hostname || '';
   }

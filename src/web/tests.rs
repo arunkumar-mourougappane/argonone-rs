@@ -235,6 +235,10 @@ async fn sidebar_matches_mockup_structure() {
     assert!(html.contains("accountMenu"));
     assert!(html.contains("<svg"), "nav links should carry icons");
     assert!(html.contains("class=\"divider\""));
+    assert!(
+        html.contains(r#"id="fan-trend""#),
+        "Fan ribbon stat should reserve a fixed-width trend slot instead of variable-width ramping text"
+    );
 }
 
 #[tokio::test]
