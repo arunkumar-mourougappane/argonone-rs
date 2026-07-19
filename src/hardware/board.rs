@@ -49,14 +49,45 @@ pub fn detect(fan_present: bool) -> Board {
     }
 }
 
+/// How many times to retry a failed probe before believing the address
+/// really is absent. A single failed read at boot (bus still settling,
+/// a momentary NACK) is common enough on real hardware that treating it
+/// as gospel would misdetect a real EON as a plain ONE for the rest of
+/// that boot — `detect` only runs once at startup, so there's no later
+/// chance to correct it.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+const PROBE_ATTEMPTS: u32 = 3;
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+const PROBE_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(20);
+
+/// Retries `probe` up to `attempts` times (with a short delay between
+/// tries), succeeding on the first `true`. Platform-agnostic and free of
+/// any actual I2C call so the retry behavior itself is testable without
+/// real hardware or `cfg(target_os = "linux")` — only `probe_addr` (the
+/// real caller) is Linux-only.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn probe_with_retries(attempts: u32, mut probe: impl FnMut() -> bool) -> bool {
+    for attempt in 0..attempts {
+        if probe() {
+            return true;
+        }
+        if attempt + 1 < attempts {
+            std::thread::sleep(PROBE_RETRY_DELAY);
+        }
+    }
+    false
+}
+
 #[cfg(target_os = "linux")]
 fn probe_addr(addr: u16) -> bool {
     use i2cdev::core::I2CDevice;
     use i2cdev::linux::LinuxI2CDevice;
-    match LinuxI2CDevice::new("/dev/i2c-1", addr) {
-        Ok(mut dev) => dev.smbus_read_byte().is_ok(),
-        Err(_) => false,
-    }
+    probe_with_retries(PROBE_ATTEMPTS, || {
+        match LinuxI2CDevice::new("/dev/i2c-1", addr) {
+            Ok(mut dev) => dev.smbus_read_byte().is_ok(),
+            Err(_) => false,
+        }
+    })
 }
 
 #[cfg(test)]
@@ -73,5 +104,30 @@ mod tests {
         // Dev machines and CI runners have no /dev/i2c-1, so the OLED/RTC
         // probe (Linux) fails closed the same way the non-Linux stub does.
         assert_eq!(detect(true), Board::One);
+    }
+
+    #[test]
+    fn probe_with_retries_recovers_from_a_transient_failure() {
+        let mut calls = 0;
+        let found = probe_with_retries(PROBE_ATTEMPTS, || {
+            calls += 1;
+            // Fails the first attempt (a momentary bus glitch), succeeds
+            // on the second — a real EON must still be detected as one,
+            // not permanently downgraded to a plain ONE for this boot.
+            calls > 1
+        });
+        assert!(found);
+        assert_eq!(calls, 2);
+    }
+
+    #[test]
+    fn probe_with_retries_gives_up_after_exhausting_all_attempts() {
+        let mut calls = 0;
+        let found = probe_with_retries(PROBE_ATTEMPTS, || {
+            calls += 1;
+            false
+        });
+        assert!(!found);
+        assert_eq!(calls, PROBE_ATTEMPTS);
     }
 }
