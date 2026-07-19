@@ -16,10 +16,27 @@
   See docs/releases/README.md for the full archive convention.
 -->
 
-## Highlights
+## Overview
 
-_Describe what's shipping in the next release._
+v0.6.1 is a small, unplanned fix on top of v0.6.0: the fan curve editor now honors the Celsius/Fahrenheit unit setting.
 
-## What's next
+## What's Fixed
 
-_Point at what's coming after this._
+- **Fan curve editor unit awareness** — `/fan`'s axis labels, point table, and "now" badge were hardcoded to °C regardless of the System page's unit toggle, unlike every other temperature reading in the app. They now display in whichever unit is configured; all internal curve math and the save API still speak Celsius, so saved curves are unaffected.
+- No fan-speed computation was ever unit-aware-broken — the control loop and every server-side target calculation always evaluate against raw Celsius. This was a display-only gap.
+
+## Deploying
+
+No new migrations since v0.4.0.
+
+```sh
+cargo install argonone-rs
+# or cross-compile / copy the binary to the Pi — see README.md, or use scripts/deploy.sh
+sudo systemctl restart argonone-rs
+```
+
+See [README.md](README.md) for full deployment instructions.
+
+## What's Next
+
+v0.7.0 turns to packaging and operability. See [docs/ROADMAP.md](docs/ROADMAP.md#v070--packaging--operability).

@@ -6,6 +6,12 @@ This file is the permanent, cumulative log across every version. For the prose w
 
 ## [Unreleased]
 
+## [v0.6.1] - 2026-07-19
+
+### Fixed
+
+- Fan curve editor (`/fan`) never read the operator's Celsius/Fahrenheit unit preference — axis labels, the point table, and the "now" badge were hardcoded to °C regardless of the System page's toggle, unlike every other temperature reading in the app. `fan_curve.rs` now threads `unit` into the page's template context; the page converts only what's displayed (axis ticks, table values, "now" badge) while keeping every internal calculation and the save API payload in Celsius. No fan-speed computation was ever unit-aware-broken — the control loop and every server-side target calculation always evaluate against raw Celsius regardless of display unit; this was a display-only gap.
+
 ## [v0.6.0] - 2026-07-19
 
 HTTPS, dashboard data-surface gaps, hardening — every v0.6.0 roadmap item, a full-fidelity mockup-parity pass, and a comprehensive post-implementation bug sweep across all eight feature areas. See [docs/ROADMAP.md](docs/ROADMAP.md) for what's next.
