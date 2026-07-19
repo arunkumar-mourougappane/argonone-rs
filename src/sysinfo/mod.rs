@@ -180,11 +180,31 @@ fn parse_disk_usage(text: &str) -> Vec<DiskUsage> {
 /// Whether a `df` row (identified by its `Filesystem` column) belongs to
 /// `device` (a whole-disk name like `sda`, from `lsblk`) — true for
 /// `/dev/sda`, `/dev/sda1`, `/dev/mapper/sda1_crypt`, etc.
+///
+/// A bare prefix match isn't enough: whole-disk device names can
+/// themselves be a prefix of a *different* whole-disk device's name —
+/// `sda` prefixes `sdaa` (the name Linux assigns past `sdz`), and
+/// `nvme0n1` prefixes `nvme0n10` (a two-digit NVMe namespace) — so
+/// "starts with the device name" alone would misattribute `sdaa1` to
+/// `sda`, or `nvme0n10p1` to `nvme0n1`. The byte right after the prefix
+/// disambiguates: Linux's own partition-naming convention is a bare
+/// digit suffix for device names ending in a letter (`sda` -> `sda1`),
+/// or a `p`-prefixed digit suffix for names already ending in a digit
+/// (`nvme0n1` -> `nvme0n1p1`, `mmcblk0` -> `mmcblk0p1`) — never another
+/// letter, and never a bare digit run for a digit-ending device (that
+/// would just be a longer device name, not a partition of this one).
 pub fn filesystem_belongs_to_device(filesystem: &str, device: &str) -> bool {
-    filesystem
-        .rsplit('/')
-        .next()
-        .is_some_and(|leaf| leaf.starts_with(device))
+    let Some(leaf) = filesystem.rsplit('/').next() else {
+        return false;
+    };
+    let Some(rest) = leaf.strip_prefix(device) else {
+        return false;
+    };
+    match rest.as_bytes().first() {
+        None => true, // exact match: the whole-disk device itself
+        Some(&b) if device.as_bytes().last().is_some_and(u8::is_ascii_digit) => b == b'p',
+        Some(&b) => b.is_ascii_digit(),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -778,6 +798,31 @@ mod tests {
         assert!(filesystem_belongs_to_device("/dev/nvme0n1p1", "nvme0n1"));
         assert!(filesystem_belongs_to_device("/dev/mmcblk0p1", "mmcblk0"));
         assert!(!filesystem_belongs_to_device("/dev/mmcblk1p1", "mmcblk0"));
+    }
+
+    #[test]
+    fn filesystem_belongs_to_device_rejects_a_longer_device_name_sharing_a_prefix() {
+        // "sda" is a prefix of "sdaa" (Linux's own naming past sdz), and
+        // "nvme0n1" is a prefix of "nvme0n10" (a two-digit NVMe
+        // namespace) — an unanchored starts_with would misattribute
+        // sdaa's/nvme0n10's partitions to the shorter device name.
+        assert!(!filesystem_belongs_to_device("/dev/sdaa1", "sda"));
+        assert!(!filesystem_belongs_to_device("/dev/nvme0n10p1", "nvme0n1"));
+        // The real device still matches its own partitions.
+        assert!(filesystem_belongs_to_device("/dev/sdaa1", "sdaa"));
+        assert!(filesystem_belongs_to_device("/dev/nvme0n10p1", "nvme0n10"));
+    }
+
+    #[test]
+    fn filesystem_belongs_to_device_still_matches_dm_crypt_mapper_names() {
+        // A device-mapper name for a LUKS-unlocked partition doesn't use
+        // Linux's own partition-numbering convention at all, just a
+        // user/tool-chosen suffix — this is the documented example this
+        // function has always been expected to match.
+        assert!(filesystem_belongs_to_device(
+            "/dev/mapper/sda1_crypt",
+            "sda"
+        ));
     }
 
     #[test]
