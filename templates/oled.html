@@ -25,13 +25,21 @@ input[type=range]{width:100%;accent-color:var(--accent);}
 .toggle i{position:absolute;top:2px;left:18px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .2s cubic-bezier(.34,1.56,.64,1);}
 .toggle.off i{left:2px;}
 .screenlist{display:flex;flex-direction:column;gap:8px;margin-top:6px;}
-.screen-row{display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:9px 12px;transition:opacity .15s ease,box-shadow .15s ease;}
+.screen-row{display:flex;align-items:center;gap:10px;background:var(--panel-2);border:1px solid var(--border);border-radius:9px;padding:9px 12px;transition:transform .15s ease, opacity .15s ease, box-shadow .15s ease;}
 .screen-row.dragging{opacity:.5;}
 .screen-row.drag-over{box-shadow:0 0 0 2px var(--accent) inset;}
-.grip{color:var(--muted);font-family:var(--font-mono);letter-spacing:2px;cursor:grab;}
+.grip{color:var(--muted);font-family:var(--font-mono);letter-spacing:2px;cursor:grab;transition:color .15s ease;}
+.screen-row:hover .grip{color:var(--accent);}
 .screen-name{flex:1;font-size:13px;font-weight:500;}
-.screen-order{font-family:var(--font-mono);font-size:11px;color:var(--muted);background:var(--panel);border:1px solid var(--border);border-radius:5px;padding:2px 7px;}
+.screen-order{font-family:var(--font-mono);font-size:11px;color:var(--muted);background:var(--panel);border:1px solid var(--border);border-radius:5px;padding:2px 7px;transition:background-color .2s ease, color .2s ease;}
 .err{color:var(--crit);font-size:12.5px;margin-top:10px;}
+@media (prefers-reduced-motion: no-preference){
+  .card{opacity:0;animation:fadeUp .5s cubic-bezier(.16,1,.3,1) forwards;}
+  .split > div:nth-child(1) .card{animation-delay:.05s}
+  .split > div:nth-child(2) .card:nth-of-type(1){animation-delay:.10s}
+  .split > div:nth-child(2) .card:nth-of-type(2){animation-delay:.16s}
+}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 </style>
 <div class="page-head">
   <h1>Display</h1>

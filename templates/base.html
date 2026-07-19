@@ -21,6 +21,12 @@
 *{box-sizing:border-box;}
 body{margin:0;min-height:100vh;background:var(--bg);color:var(--text);font-family:var(--font-ui);}
 a{color:var(--accent);}
+/* Sitewide keyboard-focus affordance — pages with their own richer
+   `:focus` treatment (e.g. an input's accent box-shadow ring) are more
+   specific and keep winning; this just makes sure every other
+   interactive element (buttons, plain links, nav items) shows a visible
+   focus ring at all, which nothing previously provided. */
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
 .center-page{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px;}
 .center-page .card{width:100%;max-width:440px;background:var(--panel);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:36px 32px 28px;}
 .brand{display:flex;align-items:center;gap:10px;margin-bottom:24px;}

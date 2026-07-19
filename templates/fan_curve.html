@@ -2,10 +2,10 @@
 {% block title %}Fan control — argonone{% endblock %}
 {% block main %}
 <style>
-.tabs{display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:3px;width:max-content;margin-bottom:18px;}
+.tabs{display:flex;gap:4px;background:var(--panel-2);border:1px solid var(--border);border-radius:9px;padding:3px;width:max-content;margin-bottom:18px;}
 .tabs button{border:none;background:none;font-family:var(--font-ui);font-size:12.5px;font-weight:600;padding:7px 16px;border-radius:7px;color:var(--muted);cursor:pointer;}
 .tabs button.active{background:var(--panel);color:var(--text);box-shadow:var(--shadow);}
-.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px 22px;max-width:680px;}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px 22px;}
 .card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
 .card-title{font-weight:600;font-size:14px;}
 .badge{font-family:var(--font-mono);font-size:10.5px;padding:3px 9px;border-radius:20px;font-weight:600;background:var(--good-soft);color:var(--good);}
@@ -17,18 +17,34 @@
 .curve-line{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
 .now-line{stroke:var(--warn);stroke-width:1.4;stroke-dasharray:3 3;}
 .now-dot{fill:var(--warn);}
-.pt{fill:var(--panel);stroke:var(--accent);stroke-width:2.5;cursor:grab;}
+.pt{fill:var(--panel);stroke:var(--accent);stroke-width:2.5;cursor:grab;transition:r .12s ease;}
 .pt.readonly{cursor:default;}
+.pt:hover,.pt.dragging{r:8;}
 table.pts{width:100%;border-collapse:collapse;margin-top:20px;font-size:13px;}
 table.pts th{text-align:left;font-family:var(--font-mono);font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600;padding:0 10px 8px;border-bottom:1px solid var(--border);}
 table.pts td{padding:9px 10px;border-bottom:1px solid var(--border);}
-table.pts input{width:64px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:12.5px;}
+table.pts input{width:64px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:12.5px;transition:border-color .15s ease, box-shadow .15s ease;}
+table.pts input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
 .rm{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;}
-.addpt{margin-top:12px;background:none;border:1px dashed var(--border);color:var(--accent);font-family:var(--font-ui);font-weight:600;font-size:12.5px;padding:8px 14px;border-radius:8px;cursor:pointer;}
+.rm:hover{color:var(--crit);}
+.addpt{margin-top:12px;background:none;border:1px dashed var(--border);color:var(--accent);font-family:var(--font-ui);font-weight:600;font-size:12.5px;padding:8px 14px;border-radius:8px;cursor:pointer;transition:background-color .15s ease, border-color .15s ease;}
+.addpt:hover{background:var(--accent-soft);border-color:var(--accent);}
 .actions{display:flex;justify-content:space-between;align-items:center;margin-top:22px;}
+.actions .btn{transition:transform .1s ease, filter .15s ease;}
+.actions .btn:active{transform:scale(.97);}
 .err{color:var(--crit);font-size:12.5px;margin-top:10px;min-height:16px;}
-.note{display:flex;gap:10px;background:var(--bg);border-radius:10px;padding:11px 14px;margin-top:18px;}
+.note{display:flex;gap:10px;background:var(--panel-2);border-radius:10px;padding:11px 14px;margin-top:18px;}
+.note svg{flex:none;color:var(--muted);margin-top:1px;}
 .note p{margin:0;font-size:12px;line-height:1.55;color:var(--muted);}
+@media (prefers-reduced-motion: no-preference){
+  .card{opacity:0;animation:fadeUp .5s cubic-bezier(.16,1,.3,1) .08s forwards;}
+  .tabs,.page-head{opacity:0;animation:fadeUp .45s cubic-bezier(.16,1,.3,1) forwards;}
+  .tabs{animation-delay:.05s}
+  .tabs button{transition:background-color .15s ease, box-shadow .15s ease, color .15s ease;}
+  #nowDot.live{animation:pulseDot 2s ease-in-out infinite;}
+}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes pulseDot{0%,100%{opacity:1;r:4}50%{opacity:.5;r:5.5}}
 </style>
 <div class="page-head">
   <h1>Fan control</h1>
@@ -84,6 +100,7 @@ table.pts input{width:64px;padding:6px 8px;border-radius:6px;border:1px solid va
   {% endif %}
 
   <div class="note">
+    <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.5v.01"/></svg>
     <p>Fan speed <b>reductions</b> are delayed 30 seconds after the temperature drops, to avoid audible fluctuation. Increases apply immediately. If the HDD curve requests a higher speed than the CPU curve, the higher value wins. The server always enforces at least 25% fan at or above 75°C, regardless of what's configured here.</p>
   </div>
 </div>
@@ -130,6 +147,7 @@ function updateNowIndicator(){
   nowLine.style.display = '';
   nowDot.setAttribute('cx', x); nowDot.setAttribute('cy', y);
   nowDot.style.display = '';
+  nowDot.classList.add('live');
   nowBadge.textContent = `now: ${Math.round(liveTemp)}°C → ${Math.round(liveFanPct)}%`;
 }
 

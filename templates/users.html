@@ -21,24 +21,35 @@ table.users tr:last-child td{border-bottom:none;}
 .badge{font-family:var(--font-mono);font-size:10.5px;padding:4px 10px;border-radius:20px;font-weight:600;}
 .badge.admin{background:var(--accent-soft);color:var(--accent);}
 .badge.operator{background:var(--good-soft);color:var(--good);}
-.badge.viewer{background:var(--bg);color:var(--muted);}
+.badge.viewer{background:var(--panel-2);color:var(--muted);}
 .badge.locked{background:var(--crit-soft);color:var(--crit);}
-.role-select{padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:11.5px;}
-.actions a{color:var(--muted);text-decoration:none;font-size:12.5px;font-weight:600;margin-right:14px;cursor:pointer;}
+.role-select{padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);font-family:var(--font-mono);font-size:11.5px;transition:border-color .15s ease, box-shadow .15s ease;}
+.role-select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+.actions a{color:var(--muted);text-decoration:none;font-size:12.5px;font-weight:600;margin-right:14px;cursor:pointer;transition:color .15s ease;}
 .actions a:hover{color:var(--accent);}
 .actions a.danger:hover{color:var(--crit);}
 .small{font-family:var(--font-mono);font-size:12px;color:var(--muted);}
 .invite-card{background:var(--panel);border:1px dashed var(--border);border-radius:12px;padding:18px 20px;margin-top:16px;}
 .invite-title{font-weight:600;font-size:13.5px;margin-bottom:12px;}
 .invite-grid{display:grid;grid-template-columns:repeat(4,1fr) auto;gap:10px;align-items:end;}
-.invite-grid .btn{margin-top:0;}
+.invite-grid .btn{margin-top:0;transition:transform .1s ease, filter .15s ease;}
+.invite-grid .btn:active{transform:scale(.97);}
 .field label{display:block;font-size:11.5px;font-weight:600;color:var(--muted);margin-bottom:6px;}
-.field input[type=text],.field select{width:100%;padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:12.5px;}
+.field input[type=text],.field select{width:100%;padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);font-family:var(--font-mono);font-size:12.5px;transition:border-color .15s ease, box-shadow .15s ease;}
+.field input[type=text]:focus,.field select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
 .err{color:var(--crit);font-size:12.5px;margin-top:10px;min-height:16px;}
 .cred-reveal{display:none;background:var(--accent-soft);border:1px solid var(--accent);border-radius:10px;padding:14px 16px;margin-bottom:16px;font-size:13px;}
 .cred-reveal.show{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
 .cred-reveal code{font-family:var(--font-mono);background:var(--panel);padding:3px 9px;border-radius:6px;font-size:13px;}
 .cred-reveal button{background:none;border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-family:var(--font-ui);font-size:12px;font-weight:600;cursor:pointer;color:var(--text);}
+table.users tr{transition:background-color .15s ease;}
+table.users tbody tr:hover{background:var(--panel-2);}
+@media (prefers-reduced-motion: no-preference){
+  .leg-card,.card,.invite-card{opacity:0;animation:fadeUp .5s cubic-bezier(.16,1,.3,1) forwards;}
+  .leg-card:nth-child(1){animation-delay:.04s} .leg-card:nth-child(2){animation-delay:.08s} .leg-card:nth-child(3){animation-delay:.12s}
+  .card{animation-delay:.16s} .invite-card{animation-delay:.2s}
+}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 </style>
 <div class="page-head">
   <h1>Users</h1>

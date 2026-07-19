@@ -56,6 +56,14 @@ struct DiskRow {
 }
 
 #[derive(Debug, Serialize)]
+struct RaidDeviceRow {
+    name: String,
+    /// "active sync" or "spare" — matches `05-storage-raid.html`'s
+    /// devchip label (`mdstat`'s own vocabulary for a member's role).
+    role: &'static str,
+}
+
+#[derive(Debug, Serialize)]
 struct RaidRow {
     name: String,
     level: String,
@@ -65,7 +73,7 @@ struct RaidRow {
     failed_disks: u8,
     spare_disks: usize,
     size_gb: Option<f64>,
-    devices: Vec<String>,
+    devices: Vec<RaidDeviceRow>,
 }
 
 pub async fn page(auth_session: AuthSession, State(state): State<AppState>) -> Response {
@@ -139,7 +147,14 @@ pub async fn page(auth_session: AuthSession, State(state): State<AppState>) -> R
             failed_disks: a.failed_disks(),
             spare_disks: a.spare_disks(),
             size_gb: a.size_kb.map(|kb| kb as f64 / 1_000_000.0),
-            devices: a.devices.iter().map(|d| d.name.clone()).collect(),
+            devices: a
+                .devices
+                .iter()
+                .map(|d| RaidDeviceRow {
+                    name: d.name.clone(),
+                    role: if d.spare { "spare" } else { "active sync" },
+                })
+                .collect(),
         })
         .collect();
 

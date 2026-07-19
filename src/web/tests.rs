@@ -979,6 +979,31 @@ async fn fan_storage_and_system_pages_render_for_logged_in_users() {
     }
 }
 
+/// Mockup-fidelity pass: fan/storage/users all gained the shared
+/// `fadeUp` entrance animation (gated behind `prefers-reduced-motion`,
+/// matching every mockup) — this locks in that it doesn't silently
+/// regress on a future edit.
+#[tokio::test]
+async fn fan_storage_and_users_pages_include_entrance_animation() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "admin1", "admin").await;
+
+    for path in ["/fan", "/storage", "/users"] {
+        let resp = router
+            .clone()
+            .oneshot(empty_request("GET", path, &cookie))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "{path} should render");
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let html = String::from_utf8_lossy(&body);
+        assert!(
+            html.contains("@keyframes fadeUp"),
+            "{path} should carry the shared entrance animation"
+        );
+    }
+}
+
 /// `fan_storage_and_system_pages_render_for_logged_in_users` runs against
 /// `Board::NoCase`, which skips the whole `{% if is_eon %}` Power & RTC
 /// card — its Jinja never gets exercised there. Cover it explicitly, for
