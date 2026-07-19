@@ -6,6 +6,46 @@ This file is the permanent, cumulative log across every version. For the prose w
 
 ## [Unreleased]
 
+## [v0.6.0] - 2026-07-19
+
+HTTPS, dashboard data-surface gaps, hardening — every v0.6.0 roadmap item, a full-fidelity mockup-parity pass, and a comprehensive post-implementation bug sweep across all eight feature areas. See [docs/ROADMAP.md](docs/ROADMAP.md) for what's next.
+
+### Added
+
+- HTTPS (`src/https.rs`, W§4.4): mode dispatch between plain HTTP, Tailscale-issued certs (`tailscale cert` + daemon-owned renewal via `axum-server`'s `RustlsConfig`), and `rustls-acme`/TLS-ALPN-01 for a custom domain. `SessionManagerLayer`'s `Secure` cookie flag now follows the active mode instead of a hardcoded `false`. Tailscale mode also surfaces the real on-disk cert's issuer/expiry/auto-renew status (parsed via `x509-parser`) and a manual "Re-issue now" action, in `templates/system.html`'s HTTPS card. **Not yet verified on real Tailscale/ACME infrastructure** — needs an actual Tailscale-joined device and a real domain to confirm both flows end-to-end.
+- Audit log viewer (W§3.6): admin-only, paginated `GET /audit` with actor/action filters and per-category action-badge coloring — `src/db/audit.rs`, `src/web/audit.rs`, `templates/audit.html`. `audit_log` has been populated since v0.5.0; this is the first screen that reads it back.
+- IR remote learn/program (W§3.2): `FanBackend::learn_ir_code`/`program_ir_code` over I2C register `0x82`, wired into `/system`'s IR card. **Unverified against real hardware** — the only documentation for that register is one line ("IR code (block write)"), so this is a best-effort reconstruction (a listen-window sentinel write, then a block read) pending confirmation on a real case.
+- Setup-wizard exposure window (A§1.1): a one-time, console-printed setup token required on `/setup`, regenerated every boot while no admin exists yet, consumed atomically in the same transaction as the winning admin insert so a losing racer's request can't replay it.
+- Network throughput, load average, and swap (W§3.3 Tier 1) — `sysinfo::read_load_avg`, `MemInfo::swap_used_percent`, `NetUsage::sample_rates` (diffing `/proc/net/dev` against the default-routed interface), surfaced on both `GET /api/status` and `/api/ws`.
+- Full dashboard card-grid rebuild (`src/web/dashboard.rs`, `templates/dashboard.html`), matching `03-dashboard.html`: Fan control, Power & RTC (EON), Network (with a client-side rolling sparkline), Storage, Display (EON, a live OLED thumbnail), System, and Signed-in-as — each card reusing its own dedicated page's existing data rather than a second copy of that logic. Pulls v0.7.0's card-grid contents forward a milestone. `rtc_schedule::next_wake` generalized into `next_occurrence`/`next_sleep` for the Power & RTC card's "next sleep" row.
+- Self-service password change (W§3.6): a sidebar account-menu link to the existing `/account/change-password` route, with context-aware copy for the voluntary-vs.-forced flow, a Cancel button, and a post-change login notice — previously only reachable via the forced `must_change_pw` redirect.
+- Status ribbon's Fan column: a fixed-width ▲/▼ trend indicator (derived from `fan_state`'s `target_pct` vs. current speed) replacing a variable-width "· ramping" suffix that reflowed the whole ribbon whenever it appeared or disappeared.
+- Sidebar/shell fidelity pass: nav icons, brand mark with hostname, a collapsible avatar account-menu, and the mockups' shared motion language (`fadeUp` entrance stagger, pulsing live-status dot, flash-on-update, card hover-lift), all gated behind `prefers-reduced-motion`. Status strip restructured to a flush full-width bar matching the mockups, not an inset card.
+- `WS_TICK_INTERVAL` reduced 2s → 1s (sparkline point count doubled to match) so the dashboard's live charts read as a smooth trend rather than a handful of visible segments.
+- No UPS/battery, NIC link-speed, or MCU-firmware-register data exists anywhere in this codebase, so the mockups' rows depending on those are intentionally omitted rather than fabricated (noted inline in `docs/ROADMAP.md`).
+
+### Fixed
+
+Mockup-fidelity pass (fan curve chart, and cross-page consistency):
+
+- Fan/HDD curve chart: temperature axis started at 0°C instead of the mockup's 30°C, wasting a third of the chart on temperatures no default curve uses; saved points below the new 30°C floor then rendered off-canvas (x was unclamped); and a fixed SVG height combined with `preserveAspectRatio="none"` distorted data points into ellipses at any card width other than exactly 620px. Fixed the axis range, clamped rendered (not table-displayed) x-coordinates, and replaced the fixed height with `aspect-ratio`.
+- `fan_curve.html`/`storage.html`/`oled.html`/`users.html` had drifted from their own mockups (missing icons, no entrance/hover motion) predating the dashboard/sidebar fidelity pass; `storage.html`'s RAID device chips were also discarding `RaidDevice.spare` when building the role label. All reconciled per-file against each page's own mockup.
+- Cross-page CSS drift left by fixing pages independently: `audit.html`/`system.html` missing the shared `fadeUp` entrance animation; three different form-control background tokens in use for the same concept across pages; four pages locally redeclaring a byte-identical `@keyframes fadeUp`; `audit.html`'s avatar sizing invented rather than matching its own mockup.
+
+Bug-check sweep (whole-codebase correctness review, not diff-scoped):
+
+- Login lockout had a TOCTOU race: concurrent requests could each read the failed-attempt count before any of them recorded a new failure, letting an attacker exceed `MAX_FAILED_ATTEMPTS` via parallel guesses. Closed with a per-`Backend` async mutex serializing the whole check-then-record sequence.
+- `PUT /api/fan/curve/{cpu,hdd}` validated the safety floor against client-submitted point order, but `FanCurve::speed_for` (and `curve_store::load`'s `ORDER BY temp_c DESC`) assumes descending order — an unsorted submission could pass validation in the order it arrived, then evaluate differently (and unsafely) after the next restart. Points are now sorted before validating.
+- The one-time setup token's persistence failure was swallowed silently, and `/setup`'s "no token on file" check read as "no token required" — a DB write failure at boot could have opened first-run admin claiming to anyone on the LAN. `generate_and_store_setup_token` now surfaces the error, and the missing-token check fails closed.
+- `POST /api/system/ir/learn` called the ~2-second blocking I2C listen window directly inside its async handler, stalling the whole tokio runtime (dashboard, WebSocket ticks, every other user's requests) for the entire window. Offloaded to `tokio::task::spawn_blocking`.
+- A RAID member marked `(F)` (failed) in `/proc/mdstat` was only ever checked against the `(S)` (spare) marker, so it fell through to "active sync" — the storage page showed a dead disk as healthy. `RaidDevice` now tracks `failed` distinctly, with a new crit-styled "faulty" devchip.
+- Board auto-detection (`Board::One` vs `Board::Eon`) treated any single I2C probe error as "address absent," so a momentary bus glitch at boot could permanently misdetect a real EON as a plain ONE for that entire boot. Probes now retry up to three times before giving up.
+- The dashboard's storage card picked a disk's RAID level label via an unordered `HashMap` lookup — a disk with members in more than one array could show a different array's level on every restart, depending on that process's randomized hash-iteration order. Replaced with an ordered `Vec` scan that always picks the same (first) match.
+- The WebSocket "ramping" indicator computed its target from the CPU curve alone, understating it whenever the HDD curve was the one actually pinning the fan speed higher (`max(cpu_target, hdd_floor)`, matching the real control loop). The control loop now publishes its per-poll disk temperature over a new watch channel so the web layer can fold the HDD floor in without re-shelling `smartctl` on every tick.
+- The one-shot `SHUTDOWN`/`FANOFF` CLI commands opened `/dev/i2c-1` on their own file descriptor with no coordination against the running daemon's own I2C access, despite being invoked independently of it (e.g. a systemd shutdown hook). Added `hardware::lockfile`, a cross-process `flock`-backed advisory lock now held around every I2C operation.
+- `filesystem_belongs_to_device`'s unanchored prefix match misattributed a longer device name's partitions to a shorter one sharing a prefix (`sdaa1` to `sda`; `nvme0n10p1` to `nvme0n1` — a two-digit NVMe namespace). Now checks the byte after the prefix against Linux's own partition-naming convention.
+- `learn_ir_code` used an all-zero sentinel to mark "nothing captured yet," making a genuinely-learned all-zero code indistinguishable from no capture at all. Switched to a fixed non-zero sentinel.
+
 ## [v0.5.0] - 2026-07-17
 
 ### Added
