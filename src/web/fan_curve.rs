@@ -64,6 +64,7 @@ pub async fn page(auth_session: AuthSession, State(state): State<AppState>) -> R
     let hdd = crate::fan::curve_store::load(&state.pool, "hdd")
         .await
         .unwrap_or_else(|_| FanCurve::default_curve());
+    let unit = crate::db::settings::load_units(&state.pool).await;
 
     let html: Html<String> = render(
         &state.env,
@@ -76,6 +77,7 @@ pub async fn page(auth_session: AuthSession, State(state): State<AppState>) -> R
             cpu_points => to_dto_ascending("cpu", &cpu).points,
             hdd_points => to_dto_ascending("hdd", &hdd).points,
             is_eon => state.board == crate::hardware::board::Board::Eon,
+            unit => match unit { crate::config::TempUnit::Celsius => "C", crate::config::TempUnit::Fahrenheit => "F" },
         },
     );
     html.into_response()

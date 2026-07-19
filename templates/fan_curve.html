@@ -82,11 +82,11 @@ table.pts input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3
         <text class="axis-label" x="8"  y="184">30%</text>
         <text class="axis-label" x="8"  y="124">60%</text>
         <text class="axis-label" x="14" y="64">100%</text>
-        <text class="axis-label" x="46"  y="258">30°C</text>
-        <text class="axis-label" x="196" y="258">50°C</text>
-        <text class="axis-label" x="314" y="258">65°C</text>
-        <text class="axis-label" x="432" y="258">80°C</text>
-        <text class="axis-label" x="580" y="258">100°C</text>
+        <text class="axis-label temp-axis-label" data-c="30"  x="46"  y="258">30°C</text>
+        <text class="axis-label temp-axis-label" data-c="50"  x="196" y="258">50°C</text>
+        <text class="axis-label temp-axis-label" data-c="65"  x="314" y="258">65°C</text>
+        <text class="axis-label temp-axis-label" data-c="80"  x="432" y="258">80°C</text>
+        <text class="axis-label temp-axis-label" data-c="100" x="580" y="258">100°C</text>
       </g>
       <path class="curve-area" id="curveArea"/>
       <path class="curve-line" id="curveLine"/>
@@ -120,6 +120,7 @@ table.pts input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3
 {% block page_script %}
 <script>
 const CAN_EDIT = {{ can_edit | tojson }};
+const UNIT = {{ unit | tojson }};
 const DATA = { cpu: {{ cpu_points | tojson }}, hdd: {{ hdd_points | tojson }} };
 const DEFAULT_CPU = [[30,0],[55,30],[60,55],[65,100]];
 const DEFAULT_HDD = [[30,0],[40,30],[50,55],[55,100]];
@@ -152,6 +153,15 @@ function pctToY(p){ return Y0 + (p/100) * (Y1-Y0); }
 function yToPct(y){ return Math.round(((y-Y0)/(Y1-Y0))*100); }
 function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
 
+// Every point/drag/axis calculation above stays in Celsius internally
+// (T0/T1 are a Celsius domain, and the API contract — PutCurveRequest's
+// temp_c — always speaks Celsius) — only what's *displayed* converts,
+// same convention every other page (app_shell.html's formatTemp,
+// dashboard/system) already follows for temperature readouts.
+function celsiusToDisplay(c){ return UNIT === 'F' ? Math.round(c * 9 / 5 + 32) : Math.round(c); }
+function displayToCelsius(v){ return UNIT === 'F' ? Math.round((v - 32) * 5 / 9) : Math.round(v); }
+function tempUnitSuffix(){ return UNIT === 'F' ? '°F' : '°C'; }
+
 function currentPoints(){ return points[current]; }
 
 function updateNowIndicator(){
@@ -163,7 +173,7 @@ function updateNowIndicator(){
   nowDot.setAttribute('cx', x); nowDot.setAttribute('cy', y);
   nowDot.style.display = '';
   nowDot.classList.add('live');
-  nowBadge.textContent = `now: ${Math.round(liveTemp)}°C → ${Math.round(liveFanPct)}%`;
+  nowBadge.textContent = `now: ${celsiusToDisplay(liveTemp)}${tempUnitSuffix()} → ${Math.round(liveFanPct)}%`;
 }
 
 document.body.addEventListener('htmx:wsAfterMessage', function (evt) {
@@ -207,7 +217,7 @@ function render(){
   ptsBody.innerHTML = '';
   pts.forEach(([t,s], i) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td><input data-i="${i}" data-axis="t" value="${t}" type="number" ${CAN_EDIT?'':'disabled'}>°C</td>` +
+    tr.innerHTML = `<td><input data-i="${i}" data-axis="t" value="${celsiusToDisplay(t)}" type="number" ${CAN_EDIT?'':'disabled'}>${tempUnitSuffix()}</td>` +
       `<td><input data-i="${i}" data-axis="s" value="${s}" type="number" ${CAN_EDIT?'':'disabled'}>%</td>` +
       `<td>${CAN_EDIT ? '<button class="rm" data-i="'+i+'">×</button>' : ''}</td>`;
     ptsBody.appendChild(tr);
@@ -224,7 +234,11 @@ function render(){
 function onTableEdit(e){
   const i = +e.target.getAttribute('data-i');
   const axis = e.target.getAttribute('data-axis');
-  const v = clamp(+e.target.value, axis === 't' ? T0 : 0, axis === 't' ? T1 : 100);
+  // Temperature input is in the display unit — convert back to Celsius
+  // (what currentPoints()/the save API always store) before clamping to
+  // T0/T1, which are themselves a Celsius domain.
+  const raw = axis === 't' ? displayToCelsius(+e.target.value) : +e.target.value;
+  const v = clamp(raw, axis === 't' ? T0 : 0, axis === 't' ? T1 : 100);
   currentPoints()[i][axis === 't' ? 0 : 1] = v;
   render();
 }
@@ -280,6 +294,16 @@ if (CAN_EDIT) {
     showToast(`${current.toUpperCase()} curve saved`);
   });
 }
+
+// The x-axis gridline labels are fixed Celsius breakpoints (30/50/65/
+//80/100°C) baked into the SVG at load time — their *position* stays
+// put (it matches this page's Celsius-domain geometry regardless of
+// display unit), only the label text needs to reflect the operator's
+// unit preference, same as every other temperature reading in the app.
+document.querySelectorAll('.temp-axis-label').forEach(el => {
+  const c = +el.getAttribute('data-c');
+  el.textContent = `${celsiusToDisplay(c)}${tempUnitSuffix()}`;
+});
 
 render();
 </script>

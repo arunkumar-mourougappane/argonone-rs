@@ -676,6 +676,62 @@ async fn viewer_cannot_change_units_but_operator_can() {
     );
 }
 
+/// The fan curve editor renders its own axis/table temperatures in
+/// Celsius regardless of the operator's unit preference — every other
+/// temperature reading in the app (dashboard, status strip, system
+/// page) honors it, so this page should too.
+#[tokio::test]
+async fn fan_curve_page_reflects_the_configured_temperature_unit() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "op1", "operator").await;
+
+    let celsius = router
+        .clone()
+        .oneshot(empty_request("GET", "/fan", &cookie))
+        .await
+        .unwrap();
+    let body = String::from_utf8(
+        celsius
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(body.contains(r#"const UNIT = "C""#));
+
+    let set_f = router
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            "/api/settings/units",
+            r#"{"unit":"F"}"#,
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(set_f.status(), StatusCode::OK);
+
+    let fahrenheit = router
+        .clone()
+        .oneshot(empty_request("GET", "/fan", &cookie))
+        .await
+        .unwrap();
+    let body = String::from_utf8(
+        fahrenheit
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(body.contains(r#"const UNIT = "F""#));
+}
+
 #[tokio::test]
 async fn ir_code_defaults_to_null_and_viewer_can_read_it() {
     let (router, pool) = test_router().await;
