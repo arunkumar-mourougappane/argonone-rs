@@ -985,10 +985,14 @@ async fn fan_storage_and_system_pages_render_for_logged_in_users() {
 /// regress on a future edit.
 #[tokio::test]
 async fn fan_storage_and_users_pages_include_entrance_animation() {
-    let (router, pool) = test_router().await;
+    let (router, pool) = test_router_with_board(crate::hardware::board::Board::Eon).await;
     let cookie = seed_and_login(&router, &pool, "admin1", "admin").await;
 
-    for path in ["/fan", "/storage", "/users"] {
+    // `@keyframes fadeUp` alone isn't a strong enough check — base.html
+    // defines it on every page regardless of whether a given page
+    // actually uses it. Check for `animation:fadeUp` (the usage), not
+    // just the shared definition every page inherits either way.
+    for path in ["/fan", "/storage", "/users", "/audit", "/system"] {
         let resp = router
             .clone()
             .oneshot(empty_request("GET", path, &cookie))
@@ -998,8 +1002,8 @@ async fn fan_storage_and_users_pages_include_entrance_animation() {
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         let html = String::from_utf8_lossy(&body);
         assert!(
-            html.contains("@keyframes fadeUp"),
-            "{path} should carry the shared entrance animation"
+            html.contains("animation:fadeUp"),
+            "{path} should use the shared entrance animation, not just inherit its definition"
         );
     }
 }

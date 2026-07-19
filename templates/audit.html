@@ -12,7 +12,8 @@ table.audit td{padding:12px 20px;border-bottom:1px solid var(--border);vertical-
 table.audit tr:last-child td{border-bottom:none;}
 .when{font-family:var(--font-mono);font-size:12px;color:var(--muted);white-space:nowrap;}
 .actor{display:flex;align-items:center;gap:9px;}
-.avatar{width:24px;height:24px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:10.5px;font-weight:600;flex:none;}
+.avatar{width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:11px;font-weight:600;flex:none;}
+.actor .avatar{width:22px;height:22px;font-size:9.5px;}
 .action-badge{font-family:var(--font-mono);font-size:11px;padding:3px 9px;border-radius:6px;background:var(--panel-2);color:var(--text);white-space:nowrap;}
 .action-badge.user{background:var(--accent-soft);color:var(--accent);}
 .action-badge.fan_curve,.action-badge.rtc_schedule,.action-badge.oled_config{background:var(--good-soft);color:var(--good);}
@@ -23,6 +24,11 @@ table.audit tr:last-child td{border-bottom:none;}
 .pager a, .pager span.disabled{padding:7px 12px;border-radius:8px;border:1px solid var(--border);color:var(--text);text-decoration:none;font-weight:600;}
 .pager span.disabled{opacity:.4;pointer-events:none;}
 .pager .links{display:flex;gap:8px;}
+table.audit tbody tr:hover{background:var(--panel-2);}
+@media (prefers-reduced-motion: no-preference){
+  .card{opacity:0;animation:fadeUp .5s cubic-bezier(.16,1,.3,1) forwards;animation-delay:.08s}
+  table.audit tr{transition:background-color .15s ease;}
+}
 </style>
 <div class="page-head">
   <h1>Audit log</h1>
