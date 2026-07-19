@@ -95,12 +95,28 @@ pub async fn build_router(
         // `/setup` requires as a query param — closes "first request on
         // the LAN wins" without adding a step to the common single-user
         // case.
-        let token = crate::db::settings::generate_and_store_setup_token(&pool).await;
-        tracing::warn!(
-            "first-run setup is open on this device and unauthenticated until claimed — visit \
-             /setup?token={token} to claim the admin account now (a fresh token replaces this one \
-             on every restart until setup completes)"
-        );
+        match crate::db::settings::generate_and_store_setup_token(&pool).await {
+            Ok(token) => {
+                tracing::warn!(
+                    "first-run setup is open on this device and unauthenticated until claimed — visit \
+                     /setup?token={token} to claim the admin account now (a fresh token replaces this one \
+                     on every restart until setup completes)"
+                );
+            }
+            Err(e) => {
+                // Fail closed, not open: `/setup`'s own check treats "no
+                // stored token" as "deny everything" rather than "no
+                // token required" precisely so a persistence failure
+                // here can't turn into an unauthenticated admin claim.
+                // The cost is setup is stuck until this is fixed (a
+                // restart retries) — annoying, never a silent bypass.
+                tracing::error!(
+                    error = %e,
+                    "failed to persist the one-time setup token — /setup will refuse every \
+                     request until this is fixed (restart the daemon to retry)"
+                );
+            }
+        }
     }
 
     let state = AppState {

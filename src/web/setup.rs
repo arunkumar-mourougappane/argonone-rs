@@ -21,9 +21,20 @@ pub struct SetupQuery {
     token: Option<String>,
 }
 
+/// True once setup has already completed, or the presented token
+/// matches the stored one. **Fails closed**: if no token is on file —
+/// whether because setup already consumed it, or because it was never
+/// successfully persisted in the first place — this only passes when
+/// setup is already complete (where the real protection is `submit`'s
+/// singleton guard, not the token). A missing token during the
+/// exposure window must never read as "no token required."
+fn token_ok(state: &AppState, expected: Option<&str>, provided: Option<&str>) -> bool {
+    state.setup_complete.load(Ordering::Relaxed) || expected.is_some() && expected == provided
+}
+
 pub async fn form(State(state): State<AppState>, Query(query): Query<SetupQuery>) -> Html<String> {
     let expected = current_setup_token(&state.pool).await;
-    if expected.is_some() && query.token != expected {
+    if !token_ok(&state, expected.as_deref(), query.token.as_deref()) {
         return render(
             &state.env,
             "setup.html",
@@ -47,7 +58,7 @@ pub async fn submit(
     Form(form): Form<SetupForm>,
 ) -> impl IntoResponse {
     let expected = current_setup_token(&state.pool).await;
-    if expected.is_some() && form.token != expected {
+    if !token_ok(&state, expected.as_deref(), form.token.as_deref()) {
         return render(
             &state.env,
             "setup.html",

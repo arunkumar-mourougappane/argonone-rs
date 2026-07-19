@@ -335,6 +335,47 @@ async fn setup_submit_rejects_wrong_token_without_creating_admin() {
     assert_eq!(count, 0);
 }
 
+/// Regression test: `generate_and_store_setup_token` failing to persist
+/// (simulated here by deleting the row, matching what a boot-time INSERT
+/// failure would leave behind) must not be interpreted as "no token
+/// required." Before this fix, `current_setup_token` returning `None` made
+/// the check a no-op, letting anyone claim `/setup` with no token at all.
+#[tokio::test]
+async fn setup_rejects_everyone_when_the_token_was_never_persisted() {
+    let (router, pool) = test_router().await;
+    sqlx::query("DELETE FROM settings WHERE key = 'setup_token'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        crate::db::settings::current_setup_token(&pool)
+            .await
+            .is_none()
+    );
+
+    // No token presented at all — this is exactly the case that used to
+    // fail open.
+    let resp = router
+        .clone()
+        .oneshot(form_request(
+            "POST",
+            "/setup",
+            "username=admin&password=correcthorsebatterystaple&password_confirm=correcthorsebatterystaple",
+            None,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    assert!(String::from_utf8_lossy(&body).contains("Missing or incorrect setup token"));
+
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0, "no admin should have been created");
+}
+
 #[tokio::test]
 async fn setup_with_correct_token_clears_it_after_completion() {
     let (router, pool) = test_router().await;

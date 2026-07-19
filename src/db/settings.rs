@@ -168,16 +168,22 @@ pub async fn save_ir_code(pool: &DbPool, code: u32, updated_by: i64) -> Result<(
 /// request wins" window on shared networks). A new token every restart
 /// means a token printed to a since-rotated log is simply stale, not a
 /// standing credential.
-pub async fn generate_and_store_setup_token(pool: &DbPool) -> String {
+///
+/// Propagates a persistence failure rather than swallowing it — the
+/// caller needs to know the token didn't actually get stored, since
+/// `/setup`'s own check treats "no stored token" as "fail closed, deny
+/// everything" precisely so this can't silently degrade into "no token
+/// required."
+pub async fn generate_and_store_setup_token(pool: &DbPool) -> Result<String, sqlx::Error> {
     let token = Alphanumeric.sample_string(&mut rand::rng(), 24);
-    let _ = sqlx::query(
+    sqlx::query(
         "INSERT INTO settings (key, value, updated_at) VALUES ('setup_token', ?1, datetime('now'))
          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
     )
     .bind(&token)
     .execute(pool)
-    .await;
-    token
+    .await?;
+    Ok(token)
 }
 
 pub async fn current_setup_token(pool: &DbPool) -> Option<String> {
