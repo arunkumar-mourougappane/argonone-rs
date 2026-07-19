@@ -99,11 +99,27 @@ pub enum AuthError {
 #[derive(Clone)]
 pub struct Backend {
     pool: DbPool,
+    /// Serializes the whole is-locked-check → verify-password →
+    /// record-outcome sequence (A§2.2's 5-attempt throttle). Without
+    /// this, N concurrent login attempts for the same account can all
+    /// read "not locked" before any of their failed-attempt writes
+    /// commit, letting all N run the real Argon2 comparison against the
+    /// stored hash — the final `failed_attempts` count still ends up
+    /// correct, but the throttle's actual purpose (bounding how many
+    /// real guesses reach the hash) is defeated. One global lock, not
+    /// per-username: this device's realistic concurrency is a handful
+    /// of home-LAN operators, so serializing every attempt costs at
+    /// most one Argon2 verify's worth of latency, not a real bottleneck
+    /// at this scale — cheap insurance against a security-relevant race.
+    auth_lock: std::sync::Arc<tokio::sync::Mutex<()>>,
 }
 
 impl Backend {
     pub fn new(pool: DbPool) -> Self {
-        Backend { pool }
+        Backend {
+            pool,
+            auth_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
+        }
     }
 }
 
@@ -113,6 +129,8 @@ impl AuthnBackend for Backend {
     type Error = AuthError;
 
     async fn authenticate(&self, creds: Credentials) -> Result<Option<User>, AuthError> {
+        let _guard = self.auth_lock.lock().await;
+
         let Some(user) = sqlx::query_as::<_, User>(
             "SELECT id, username, password_hash, must_change_pw, role FROM users WHERE username = ?1",
         )
@@ -321,6 +339,51 @@ mod tests {
             .await
             .unwrap();
         assert!(user.is_none());
+    }
+
+    /// Regression test for the TOCTOU race: without `auth_lock` serializing
+    /// authenticate(), firing many concurrent wrong-password attempts could
+    /// let all of them read "not locked" before any commits, running the
+    /// real Argon2 comparison far more than `MAX_FAILED_ATTEMPTS` times.
+    /// With the lock in place, attempts past the 5th must observe the
+    /// already-locked state and short-circuit before `record_failure` runs
+    /// again, so `failed_attempts` is capped at exactly `MAX_FAILED_ATTEMPTS`
+    /// even when many attempts race in at once.
+    #[tokio::test]
+    async fn concurrent_failed_attempts_cannot_exceed_the_lockout_threshold() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = crate::db::connect(&dir.path().join("t.db")).await.unwrap();
+        let id = seed_user(&pool, "dave", "correct-password").await;
+        let backend = Backend::new(pool.clone());
+
+        let attempts = (MAX_FAILED_ATTEMPTS * 3) as usize;
+        let mut handles = Vec::with_capacity(attempts);
+        for _ in 0..attempts {
+            let backend = backend.clone();
+            handles.push(tokio::spawn(async move {
+                backend
+                    .authenticate(Credentials {
+                        username: "dave".into(),
+                        password: "wrong".into(),
+                    })
+                    .await
+            }));
+        }
+        for h in handles {
+            h.await.unwrap().unwrap();
+        }
+
+        let failed_attempts: i64 =
+            sqlx::query_scalar("SELECT failed_attempts FROM users WHERE id = ?1")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            failed_attempts, MAX_FAILED_ATTEMPTS,
+            "concurrent attempts past the threshold must be rejected by the lock check, \
+             not silently allowed to keep incrementing"
+        );
     }
 
     #[tokio::test]
