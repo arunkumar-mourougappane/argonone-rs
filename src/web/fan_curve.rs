@@ -126,15 +126,24 @@ pub async fn put_curve(
             .into_response();
     }
 
-    let fan_curve = FanCurve(
-        body.points
-            .iter()
-            .map(|p| CurvePoint {
-                temp_c: p.temp_c,
-                speed_pct: p.fan_pct.min(100),
-            })
-            .collect(),
-    );
+    let mut points: Vec<CurvePoint> = body
+        .points
+        .iter()
+        .map(|p| CurvePoint {
+            temp_c: p.temp_c,
+            speed_pct: p.fan_pct.min(100),
+        })
+        .collect();
+    // FanCurve::speed_for (and so violates_safety_floor) assumes
+    // descending-sorted points, the same invariant FanCurve::parse
+    // enforces before ever constructing one — a client-submitted point
+    // order isn't guaranteed to already be sorted, and curve_store::load
+    // reloads via `ORDER BY temp_c DESC`, so an unsorted curve that
+    // happened to validate as safe in this order could evaluate
+    // differently (and unsafely) after the next restart if this weren't
+    // sorted before validating.
+    points.sort_by_key(|p| std::cmp::Reverse(p.temp_c));
+    let fan_curve = FanCurve(points);
 
     if fan_curve.violates_safety_floor() {
         return (

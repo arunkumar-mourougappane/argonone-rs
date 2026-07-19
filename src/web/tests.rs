@@ -533,6 +533,32 @@ async fn saving_an_unsafe_curve_is_rejected_with_422() {
     assert_eq!(put_resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
+/// Regression test: `FanCurve::speed_for` (and so `violates_safety_floor`)
+/// assumes descending-sorted points, same as `FanCurve::parse` and
+/// `curve_store::load`'s `ORDER BY temp_c DESC` both guarantee — but a
+/// client-submitted point order isn't sorted by construction. Submitted
+/// in ascending order, `[60%->100%, 95C->0%]` would (if evaluated
+/// unsorted) match `95 >= 60` first and read as "100% at 95C", passing
+/// the safety check even though the curve actually commands 0% fan at
+/// 95C. `put_curve` must sort before validating, not just before saving.
+#[tokio::test]
+async fn unsafe_curve_is_rejected_even_when_submitted_out_of_order() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "op1", "operator").await;
+
+    let put_resp = router
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            "/api/fan/curve/cpu",
+            r#"{"points":[{"temp_c":60,"fan_pct":100},{"temp_c":95,"fan_pct":0}]}"#,
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(put_resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
 #[tokio::test]
 async fn unknown_curve_name_is_404() {
     let (router, pool) = test_router().await;
