@@ -14,7 +14,6 @@ use axum::extract::State;
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use minijinja::context;
 use serde::Serialize;
-use std::collections::HashMap;
 
 /// Local weekday/hour/minute via the `date` command — matches this
 /// codebase's existing "shell out to a system tool" convention
@@ -59,6 +58,20 @@ fn usage_severity(pct: u8) -> &'static str {
     } else {
         "good"
     }
+}
+
+/// The RAID level to show next to a disk's name, if any of its members
+/// belong to an array. `member_level` is ordered the same as
+/// `sysinfo::read_raid_status()`'s array list, and this returns the
+/// *first* match deterministically — a plain `Vec` scan, not a
+/// `HashMap` lookup, so a disk with members in more than one array
+/// always reports the same array's level rather than one that depends
+/// on that process's randomized hash-iteration order.
+fn disk_raid_level(member_level: &[(String, String)], disk_name: &str) -> Option<String> {
+    member_level
+        .iter()
+        .find(|(dev, _)| crate::sysinfo::filesystem_belongs_to_device(dev, disk_name))
+        .map(|(_, lvl)| lvl.clone())
 }
 
 #[derive(Debug, Serialize)]
@@ -130,10 +143,18 @@ pub async fn show(auth_session: AuthSession, State(state): State<AppState>) -> R
     let snapshot = crate::sysinfo::read_storage_snapshot().await;
     let usage = crate::sysinfo::read_disk_usage();
     let raid = crate::sysinfo::read_raid_status();
-    let mut member_level: HashMap<String, String> = HashMap::new();
+    // A `Vec`, not a `HashMap`: a whole-disk device can, in principle,
+    // have members in more than one array (e.g. separate partitions each
+    // in their own RAID set), and `filesystem_belongs_to_device`'s prefix
+    // match means more than one entry here can match the same disk. A
+    // `HashMap`'s iteration order is randomized per-process, so picking
+    // "the" match out of one would show a different array's level on
+    // every restart — this preserves `raid`'s own array order instead,
+    // so the same disk always reports the same (first) array's level.
+    let mut member_level: Vec<(String, String)> = Vec::new();
     for array in &raid {
         for device in &array.devices {
-            member_level.insert(device.name.clone(), array.level.clone());
+            member_level.push((device.name.clone(), array.level.clone()));
         }
     }
     let disk_rows: Vec<DashDiskRow> = snapshot
@@ -145,10 +166,7 @@ pub async fn show(auth_session: AuthSession, State(state): State<AppState>) -> R
                     crate::sysinfo::filesystem_belongs_to_device(&u.filesystem, &d.device.name)
                 })
                 .map(|u| u.used_pct);
-            let level = member_level
-                .iter()
-                .find(|(dev, _)| crate::sysinfo::filesystem_belongs_to_device(dev, &d.device.name))
-                .map(|(_, lvl)| lvl.clone());
+            let level = disk_raid_level(&member_level, &d.device.name);
             let label = match level {
                 Some(lvl) => format!("{} ({})", d.device.name, lvl.to_uppercase()),
                 None => d.device.name.clone(),
@@ -222,5 +240,31 @@ mod tests {
         assert_eq!(usage_severity(50), "good");
         assert_eq!(usage_severity(70), "warn");
         assert_eq!(usage_severity(90), "crit");
+    }
+
+    #[test]
+    fn disk_raid_level_is_deterministic_when_a_disk_has_members_in_two_arrays() {
+        // sda1 in md0 (raid1), sda2 in md1 (raid0) — both belong to the
+        // whole disk "sda" under filesystem_belongs_to_device's prefix
+        // match. Run the lookup many times: with the old HashMap-backed
+        // version this would occasionally surface "raid0" instead of
+        // "raid1" depending on that process's randomized hash seed: here
+        // it must always return the first array's level, every time.
+        let member_level = vec![
+            ("sda1".to_string(), "raid1".to_string()),
+            ("sda2".to_string(), "raid0".to_string()),
+        ];
+        for _ in 0..50 {
+            assert_eq!(
+                disk_raid_level(&member_level, "sda"),
+                Some("raid1".to_string())
+            );
+        }
+    }
+
+    #[test]
+    fn disk_raid_level_is_none_for_a_disk_with_no_raid_members() {
+        let member_level = vec![("sda1".to_string(), "raid1".to_string())];
+        assert_eq!(disk_raid_level(&member_level, "sdb"), None);
     }
 }
