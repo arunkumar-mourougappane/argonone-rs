@@ -23,6 +23,7 @@ async fn test_router_with_board(
     let path = Box::leak(Box::new(dir)).path().join("t.db");
     let pool = crate::db::connect(&path).await.unwrap();
     let (_tx, rx) = tokio::sync::watch::channel(0u8);
+    let (_disk_temp_tx, disk_temp_rx) = tokio::sync::watch::channel(None::<f32>);
     let (cpu_tx, _) = tokio::sync::watch::channel(crate::config::FanCurve::default_curve());
     let (hdd_tx, _) = tokio::sync::watch::channel(crate::config::FanCurve::default_curve());
     let (units_tx, _) = tokio::sync::watch::channel(crate::config::TempUnit::Celsius);
@@ -35,6 +36,7 @@ async fn test_router_with_board(
         pool.clone(),
         board,
         rx,
+        disk_temp_rx,
         cpu_tx,
         hdd_tx,
         units_tx,
@@ -768,6 +770,7 @@ async fn ir_learn_does_not_block_other_requests_on_the_runtime() {
     let path = Box::leak(Box::new(dir)).path().join("t.db");
     let pool = crate::db::connect(&path).await.unwrap();
     let (_tx, rx) = tokio::sync::watch::channel(0u8);
+    let (_disk_temp_tx, disk_temp_rx) = tokio::sync::watch::channel(None::<f32>);
     let (cpu_tx, _) = tokio::sync::watch::channel(crate::config::FanCurve::default_curve());
     let (hdd_tx, _) = tokio::sync::watch::channel(crate::config::FanCurve::default_curve());
     let (units_tx, _) = tokio::sync::watch::channel(crate::config::TempUnit::Celsius);
@@ -780,6 +783,7 @@ async fn ir_learn_does_not_block_other_requests_on_the_runtime() {
         pool.clone(),
         crate::hardware::board::Board::Eon,
         rx,
+        disk_temp_rx,
         cpu_tx,
         hdd_tx,
         units_tx,
@@ -1869,6 +1873,7 @@ async fn oled_preview_renders_the_currently_selected_screen() {
     let path = Box::leak(Box::new(dir)).path().join("t.db");
     let pool = crate::db::connect(&path).await.unwrap();
     let (_tx, rx) = tokio::sync::watch::channel(0u8);
+    let (_disk_temp_tx, disk_temp_rx) = tokio::sync::watch::channel(None::<f32>);
     let (cpu_tx, _) = tokio::sync::watch::channel(crate::config::FanCurve::default_curve());
     let (hdd_tx, _) = tokio::sync::watch::channel(crate::config::FanCurve::default_curve());
     let (units_tx, _) = tokio::sync::watch::channel(crate::config::TempUnit::Celsius);
@@ -1881,6 +1886,7 @@ async fn oled_preview_renders_the_currently_selected_screen() {
         pool.clone(),
         crate::hardware::board::Board::Eon,
         rx,
+        disk_temp_rx,
         cpu_tx,
         hdd_tx,
         units_tx,

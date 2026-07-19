@@ -99,12 +99,17 @@ async fn stream(mut socket: WebSocket, state: AppState) {
                     return;
                 }
 
-                // Target the active CPU curve would pick at the current
-                // temperature — "ramping" (dashboard's Fan card, and now
+                // Target the active curves would pick at the current
+                // temperatures — "ramping" (dashboard's Fan card, and now
                 // every page's status strip) is exactly current != target,
                 // without needing the control loop's own private
                 // hysteresis state, which the web layer never sees.
-                let target_pct = cpu_temp_c.map(|t| state.cpu_curve_tx.borrow().speed_for(t));
+                let target_pct = fan_target_pct(
+                    &state.cpu_curve_tx.borrow(),
+                    &state.hdd_curve_tx.borrow(),
+                    cpu_temp_c,
+                    *state.disk_temp.borrow(),
+                );
                 let fan_state = json!({
                     "type": "fan_state",
                     "curve": "cpu",
@@ -124,5 +129,70 @@ async fn stream(mut socket: WebSocket, state: AppState) {
                 }
             }
         }
+    }
+}
+
+/// The fan speed the control loop would target right now, given both
+/// curves and both current temperatures — mirrors `fan::FanController::
+/// tick_with_floor`'s `self.curve.speed_for(temp).max(floor_pct)`
+/// (`service.rs`'s `hdd_floor`) without needing the control loop's own
+/// private hysteresis state, which the web layer never sees. `None` only
+/// when the CPU temperature itself is unavailable — matching
+/// `tick_with_floor`, which holds the current speed rather than acting
+/// on the HDD floor alone in that case.
+fn fan_target_pct(
+    cpu_curve: &crate::config::FanCurve,
+    hdd_curve: &crate::config::FanCurve,
+    cpu_temp_c: Option<f32>,
+    disk_temp_c: Option<f32>,
+) -> Option<u8> {
+    let hdd_floor_pct = disk_temp_c.map(|t| hdd_curve.speed_for(t)).unwrap_or(0);
+    cpu_temp_c.map(|t| cpu_curve.speed_for(t).max(hdd_floor_pct))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{CurvePoint, FanCurve};
+
+    fn curve(points: &[(i32, u8)]) -> FanCurve {
+        FanCurve(
+            points
+                .iter()
+                .map(|&(temp_c, speed_pct)| CurvePoint { temp_c, speed_pct })
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn fan_target_pct_uses_the_cpu_curve_when_it_demands_more() {
+        let cpu = curve(&[(80, 100), (0, 20)]);
+        let hdd = curve(&[(80, 60), (0, 10)]);
+        assert_eq!(
+            fan_target_pct(&cpu, &hdd, Some(80.0), Some(30.0)),
+            Some(100)
+        );
+    }
+
+    /// The bug: a hot disk with a cool CPU used to report the CPU
+    /// curve's (low) target as "the" target, even though the real
+    /// control loop's `hdd_floor` would have pinned the fan higher —
+    /// the dashboard would show "steady" while the fan was actually
+    /// ramping to satisfy the HDD curve.
+    #[test]
+    fn fan_target_pct_folds_in_the_hdd_floor_when_it_demands_more() {
+        let cpu = curve(&[(80, 100), (0, 20)]);
+        let hdd = curve(&[(80, 60), (0, 10)]);
+        assert_eq!(fan_target_pct(&cpu, &hdd, Some(20.0), Some(80.0)), Some(60));
+    }
+
+    #[test]
+    fn fan_target_pct_is_none_when_cpu_temp_is_unavailable() {
+        // Matches tick_with_floor: an unreadable CPU temperature holds
+        // the current speed rather than falling back to the HDD floor
+        // alone, so this must stay `None`, not `Some(hdd_floor)`.
+        let cpu = curve(&[(80, 100), (0, 20)]);
+        let hdd = curve(&[(80, 60), (0, 10)]);
+        assert_eq!(fan_target_pct(&cpu, &hdd, None, Some(80.0)), None);
     }
 }

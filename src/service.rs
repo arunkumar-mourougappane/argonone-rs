@@ -105,6 +105,12 @@ pub async fn run() {
     }
 
     let (fan_speed_tx, fan_speed_rx) = tokio::sync::watch::channel(0u8);
+    // W§3.3's "ramping" indicator (the web layer's `/api/ws` fan_state
+    // message) needs the HDD curve's current floor to compute an
+    // accurate target, which needs the current disk temperature —
+    // published here rather than having the web layer re-shell
+    // `smartctl` itself on every WS tick for every connected client.
+    let (disk_temp_tx, disk_temp_rx) = tokio::sync::watch::channel(None::<f32>);
     // W§2.7: the REST write handlers push edited curves on these
     // channels after their DB write commits; the control loop below
     // wakes on either its poll-interval timer or a channel update,
@@ -134,6 +140,7 @@ pub async fn run() {
         pool,
         hw.board,
         fan_speed_rx,
+        disk_temp_rx,
         cpu_curve_tx,
         hdd_curve_tx,
         units_tx,
@@ -175,6 +182,7 @@ pub async fn run() {
                     .iter()
                     .filter_map(|d| d.temp_c)
                     .fold(None, |acc: Option<f32>, t| Some(acc.map_or(t, |a| a.max(t))));
+                disk_temp_tx.send_replace(last_disk_temp_c);
                 let floor = hdd_floor(&hdd_curve, last_disk_temp_c);
                 let speed = fan_controller.tick_with_floor(hw.fan.as_ref(), Instant::now(), floor);
                 fan_speed_tx.send_replace(speed);

@@ -40,6 +40,12 @@ use tower_sessions_sqlx_store::SqliteStore;
 /// web layer can report it without owning the hardware backend itself.
 pub type FanSpeedRx = tokio::sync::watch::Receiver<u8>;
 
+/// Latest max disk temperature (`None` until the control loop's first
+/// storage poll), published the same way as [`FanSpeedRx`] so the web
+/// layer can fold the HDD curve's demand into the "ramping" target it
+/// reports without re-shelling `smartctl` itself on every WS tick.
+pub type DiskTempRx = tokio::sync::watch::Receiver<Option<f32>>;
+
 #[derive(Clone)]
 pub struct AppState {
     pub pool: DbPool,
@@ -50,6 +56,7 @@ pub struct AppState {
     pub setup_complete: Arc<AtomicBool>,
     pub board: crate::hardware::board::Board,
     pub fan_speed: FanSpeedRx,
+    pub disk_temp: DiskTempRx,
     /// W§2.7's live-apply channels: PUT handlers send here after their DB
     /// write commits, the control loop (`service::run`) wakes on the
     /// change and applies it without restarting.
@@ -74,6 +81,7 @@ pub async fn build_router(
     pool: DbPool,
     board: crate::hardware::board::Board,
     fan_speed: FanSpeedRx,
+    disk_temp: DiskTempRx,
     cpu_curve_tx: tokio::sync::watch::Sender<FanCurve>,
     hdd_curve_tx: tokio::sync::watch::Sender<FanCurve>,
     units_tx: tokio::sync::watch::Sender<TempUnit>,
@@ -125,6 +133,7 @@ pub async fn build_router(
         setup_complete: Arc::new(AtomicBool::new(user_count > 0)),
         board,
         fan_speed,
+        disk_temp,
         cpu_curve_tx,
         hdd_curve_tx,
         units_tx,
