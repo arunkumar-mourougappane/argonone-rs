@@ -10,7 +10,13 @@
 .card-title{font-weight:600;font-size:14px;}
 .badge{font-family:var(--font-mono);font-size:10.5px;padding:3px 9px;border-radius:20px;font-weight:600;background:var(--good-soft);color:var(--good);}
 .chart-wrap{position:relative;margin:14px 0 4px;}
-.chart-wrap svg{width:100%;height:280px;overflow:visible;}
+/* height:280px (fixed) + width:100% + preserveAspectRatio="none" only
+   matched the 620x280 viewBox at exactly 620px wide — any other width
+   (the card has no max-width, so it can be far wider) stretched the
+   horizontal axis alone, turning the round data-point circles into
+   ellipses. aspect-ratio keeps width and height scaling together at the
+   viewBox's own 620:280 ratio, so the scale stays uniform at any width. */
+.chart-wrap svg{width:100%;height:auto;aspect-ratio:620/280;overflow:visible;}
 .axis-label{font-family:var(--font-mono);font-size:10px;fill:var(--muted);}
 .gridline{stroke:var(--border);stroke-width:1;}
 .curve-area{fill:var(--accent-soft);opacity:.55;}
@@ -23,7 +29,7 @@
 table.pts{width:100%;border-collapse:collapse;margin-top:20px;font-size:13px;}
 table.pts th{text-align:left;font-family:var(--font-mono);font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600;padding:0 10px 8px;border-bottom:1px solid var(--border);}
 table.pts td{padding:9px 10px;border-bottom:1px solid var(--border);}
-table.pts input{width:64px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:12.5px;transition:border-color .15s ease, box-shadow .15s ease;}
+table.pts input{width:64px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);font-family:var(--font-mono);font-size:12.5px;transition:border-color .15s ease, box-shadow .15s ease;}
 table.pts input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
 .rm{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;}
 .rm:hover{color:var(--crit);}
@@ -43,7 +49,10 @@ table.pts input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3
   .tabs button{transition:background-color .15s ease, box-shadow .15s ease, color .15s ease;}
   #nowDot.live{animation:pulseDot 2s ease-in-out infinite;}
 }
-@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+/* fadeUp is already defined in base.html (shared across every page) —
+   pulseDot is redefined here on purpose: this page's version also
+   animates the SVG circle's `r` attribute (the "now" dot's pulse-grow),
+   which base.html's plain-opacity version doesn't need to do. */
 @keyframes pulseDot{0%,100%{opacity:1;r:4}50%{opacity:.5;r:5.5}}
 </style>
 <div class="page-head">
@@ -73,8 +82,10 @@ table.pts input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3
         <text class="axis-label" x="8"  y="184">30%</text>
         <text class="axis-label" x="8"  y="124">60%</text>
         <text class="axis-label" x="14" y="64">100%</text>
-        <text class="axis-label" x="46"  y="258">0°C</text>
-        <text class="axis-label" x="320" y="258">50°C</text>
+        <text class="axis-label" x="46"  y="258">30°C</text>
+        <text class="axis-label" x="196" y="258">50°C</text>
+        <text class="axis-label" x="314" y="258">65°C</text>
+        <text class="axis-label" x="432" y="258">80°C</text>
         <text class="axis-label" x="580" y="258">100°C</text>
       </g>
       <path class="curve-area" id="curveArea"/>
@@ -122,7 +133,11 @@ const errMsg = document.getElementById('errMsg');
 const nowBadge = document.getElementById('nowBadge');
 const nowLine = document.getElementById('nowLine');
 const nowDot = document.getElementById('nowDot');
-const X0=50, X1=600, T0=0, T1=100, Y0=240, Y1=60;
+// T0=30 (not 0) matches 04-fan-curve-editor.html — the meaningful curve
+// range is 30-100°C (both default curves start there), so the axis
+// starts there too instead of wasting a third of the chart on
+// temperatures no curve ever uses.
+const X0=50, X1=600, T0=30, T1=100, Y0=240, Y1=60;
 let liveTemp = null, liveFanPct = null;
 
 let current = 'cpu';
@@ -167,9 +182,15 @@ function render(){
   const pts = currentPoints().slice().sort((a,b) => a[0]-b[0]);
   points[current] = pts;
 
-  // SVG points + curve path
+  // SVG points + curve path. Clamp to the plot area (not just T0/T1 in
+  // xToTemp) — a point saved before the 30°C axis floor existed (or any
+  // future axis-range change) must stay visually contained in the chart
+  // rather than render off-canvas at a negative x, which this page's
+  // `overflow:visible` chart-wrap would otherwise let bleed into the
+  // sidebar. The table below still shows the point's real, unclamped
+  // value — this only affects where it's drawn.
   ptsGroup.innerHTML = '';
-  const coords = pts.map(([t,s]) => ({x: tempToX(t), y: pctToY(s)}));
+  const coords = pts.map(([t,s]) => ({x: clamp(tempToX(t), X0, X1), y: pctToY(s)}));
   coords.forEach((c, i) => {
     const el = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
     el.setAttribute('class', 'pt' + (CAN_EDIT ? '' : ' readonly'));
