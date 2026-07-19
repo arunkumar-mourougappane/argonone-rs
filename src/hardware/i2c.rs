@@ -32,7 +32,7 @@ const CTRL_POWEROFF: u8 = 0x01;
 /// are this crate's best-effort reconstruction, unverified against real
 /// hardware.
 const REG_IR_CODE: u8 = 0x82;
-const IR_CODE_LEN: u8 = 4;
+use super::ir::{IR_CODE_LEN, IR_LEARN_SENTINEL, decode_learned_ir_code};
 /// How long to give the case's own IR receiver to catch a button press
 /// before giving up — matches the timing the reference UI mockup
 /// (`docs/mockups/08-system-settings.html`) uses for its "Listening…"
@@ -143,19 +143,15 @@ impl FanBackend for I2cFan {
         let _lock = lock_i2c_bus()?;
         {
             let mut dev = self.dev.lock().expect("I2C fan mutex poisoned");
-            dev.smbus_write_i2c_block_data(REG_IR_CODE, &[0; IR_CODE_LEN as usize])
+            dev.smbus_write_i2c_block_data(REG_IR_CODE, &IR_LEARN_SENTINEL)
                 .map_err(|e| HwError::Bus(format!("starting IR learn window: {e}")))?;
         }
         std::thread::sleep(IR_LEARN_WINDOW);
         let mut dev = self.dev.lock().expect("I2C fan mutex poisoned");
         let bytes = dev
-            .smbus_read_i2c_block_data(REG_IR_CODE, IR_CODE_LEN)
+            .smbus_read_i2c_block_data(REG_IR_CODE, IR_CODE_LEN as u8)
             .map_err(|e| HwError::Bus(format!("reading learned IR code: {e}")))?;
-        if bytes.len() != IR_CODE_LEN as usize {
-            return Ok(None);
-        }
-        let code = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-        Ok((code != 0).then_some(code))
+        Ok(decode_learned_ir_code(&bytes))
     }
 
     fn program_ir_code(&self, code: u32) -> HwResult<()> {
