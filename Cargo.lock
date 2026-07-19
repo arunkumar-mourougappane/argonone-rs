@@ -117,6 +117,7 @@ dependencies = [
  "gpiod",
  "http-body-util",
  "i2cdev",
+ "libc",
  "linux-embedded-hal",
  "minijinja",
  "rand 0.10.2",

@@ -6,7 +6,22 @@
 use super::{FanBackend, FanCapability, HwError, HwResult};
 use i2cdev::core::I2CDevice;
 use i2cdev::linux::LinuxI2CDevice;
+use std::path::Path;
 use std::sync::Mutex;
+
+/// Shared with every process that touches the I2C bus — the running
+/// daemon and the one-shot `SHUTDOWN`/`FANOFF` CLI commands
+/// (`service::shutdown_once`/`fanoff_once`) alike — since those are
+/// invoked independently of the daemon (e.g. a systemd shutdown hook
+/// script) and can genuinely run concurrently with it. `/run` is a
+/// tmpfs cleared on reboot, the conventional home for this kind of
+/// runtime-only lock file (matches `/run/lock`'s traditional role).
+const I2C_LOCK_PATH: &str = "/run/argonone-rs-i2c.lock";
+
+fn lock_i2c_bus() -> HwResult<super::lockfile::FileLock> {
+    super::lockfile::acquire_exclusive(Path::new(I2C_LOCK_PATH))
+        .map_err(|e| HwError::Bus(format!("acquiring cross-process I2C lock: {e}")))
+}
 
 const FAN_ADDR: u16 = 0x1a;
 const REG_DUTY_CYCLE: u8 = 0x80;
@@ -39,6 +54,7 @@ impl I2cFan {
     /// nothing answers at `0x1a` (no case attached) rather than treating
     /// that as an error — only a bus-open failure is an error.
     pub fn detect() -> HwResult<Option<Self>> {
+        let _lock = lock_i2c_bus()?;
         let bus_path = "/dev/i2c-1";
         let mut dev = LinuxI2CDevice::new(bus_path, FAN_ADDR)
             .map_err(|e| HwError::Bus(format!("opening {bus_path}: {e}")))?;
@@ -83,6 +99,7 @@ impl FanBackend for I2cFan {
     }
 
     fn set_speed(&self, percent: u8) -> HwResult<()> {
+        let _lock = lock_i2c_bus()?;
         let percent = percent.min(100);
         let mut dev = self.dev.lock().expect("I2C fan mutex poisoned");
         match self.capability {
@@ -97,6 +114,7 @@ impl FanBackend for I2cFan {
     }
 
     fn signal_poweroff(&self) -> HwResult<()> {
+        let _lock = lock_i2c_bus()?;
         let mut dev = self.dev.lock().expect("I2C fan mutex poisoned");
         match self.capability {
             FanCapability::Registers => dev
@@ -117,6 +135,12 @@ impl FanBackend for I2cFan {
             // interface for this at all — nothing to attempt.
             return Ok(None);
         }
+        // Held for the whole listen window, not just each individual
+        // smbus call: this is a write-then-sleep-then-read *sequence*,
+        // and a daemon poll (or another one-shot command) writing to the
+        // same register mid-window — even via its own in-process
+        // Mutex-guarded call — would corrupt the capture.
+        let _lock = lock_i2c_bus()?;
         {
             let mut dev = self.dev.lock().expect("I2C fan mutex poisoned");
             dev.smbus_write_i2c_block_data(REG_IR_CODE, &[0; IR_CODE_LEN as usize])
@@ -138,6 +162,7 @@ impl FanBackend for I2cFan {
         if self.capability != FanCapability::Registers {
             return Ok(());
         }
+        let _lock = lock_i2c_bus()?;
         let mut dev = self.dev.lock().expect("I2C fan mutex poisoned");
         dev.smbus_write_i2c_block_data(REG_IR_CODE, &code.to_be_bytes())
             .map_err(|e| HwError::Bus(format!("writing IR code: {e}")))

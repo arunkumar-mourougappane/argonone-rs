@@ -8,6 +8,7 @@ pub mod board;
 pub mod gpio;
 #[cfg(target_os = "linux")]
 pub mod i2c;
+pub mod lockfile;
 pub mod noop;
 #[cfg(target_os = "linux")]
 pub mod oled;
