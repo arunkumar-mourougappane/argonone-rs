@@ -171,6 +171,10 @@ async fn serve_acme(
 /// bind at all — a misconfigured HTTPS setting shouldn't take the whole
 /// web UI down.
 pub fn spawn_server(listener: std::net::TcpListener, https: HttpsConfig, router: Router) {
+    listener
+        .set_nonblocking(true)
+        .expect("failed to set listener non-blocking");
+
     let effective = match https.mode {
         HttpsMode::Tailscale if https.domain.is_none() => {
             tracing::error!(
@@ -190,9 +194,6 @@ pub fn spawn_server(listener: std::net::TcpListener, https: HttpsConfig, router:
     match effective.mode {
         HttpsMode::Off => {
             tokio::spawn(async move {
-                listener
-                    .set_nonblocking(true)
-                    .expect("failed to set listener non-blocking");
                 let listener = tokio::net::TcpListener::from_std(listener)
                     .expect("failed to hand listener to tokio");
                 tracing::info!("web server listening (plain HTTP)");
