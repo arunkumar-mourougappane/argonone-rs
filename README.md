@@ -11,7 +11,7 @@ A Rust daemon, CLI, and web UI for Argon ONE/EON Raspberry Pi cases — I2C fan 
 
 ## Status
 
-Latest tagged release: **v0.6.1** (fan curve editor now honors the Fahrenheit unit setting — a small unplanned fix on top of v0.6.0's HTTPS, dashboard data-surface gaps, and hardening work; see [CHANGELOG.md](CHANGELOG.md#v061---2026-07-19)). **HTTPS (Tailscale/ACME) and IR remote learn/program are not yet verified against real infrastructure/hardware** — both pass in-process tests but need an actual Tailscale-joined device, a real domain, and a real Argon case with an IR receiver to confirm end-to-end. The most recent hardware-verified release is **v0.5.0**, deployed and confirmed on a real **Argon ONE**: board auto-detection (`Board::One`), the fan curve editor's live response, and the Users admin page end-to-end all confirmed on-device. Every hardware access goes through a `HardwareBackend` trait with a no-op fallback, so the daemon runs (and is testable) without the case attached.
+Latest tagged release: **v0.6.1** (fan curve editor now honors the Fahrenheit unit setting — a small unplanned fix on top of v0.6.0's HTTPS, dashboard data-surface gaps, and hardening work; see [CHANGELOG.md](CHANGELOG.md#v061---2026-07-19)). **HTTPS over Tailscale-issued certs is now verified end-to-end on real infrastructure** — see [docs/tailscale-setup.md](docs/tailscale-setup.md) for setup, validation, and troubleshooting. **ACME (Let's Encrypt/custom domain) HTTPS and IR remote learn/program are still not yet verified against real infrastructure/hardware** — both pass in-process tests but need a real domain and a real Argon case with an IR receiver to confirm end-to-end. The most recent hardware-verified release is **v0.5.0**, deployed and confirmed on a real **Argon ONE**: board auto-detection (`Board::One`), the fan curve editor's live response, and the Users admin page end-to-end all confirmed on-device. Every hardware access goes through a `HardwareBackend` trait with a no-op fallback, so the daemon runs (and is testable) without the case attached.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full v0.1.0 → v0.7.0 milestone plan (each item annotated `Done`/`Not yet done` against the code) and [CHANGELOG.md](CHANGELOG.md) for the dated, cumulative record of what's landed.
 
@@ -96,6 +96,7 @@ Once logged in, the sidebar has **Dashboard** (full card grid — Fan, Power & R
 
 - [docs/ROADMAP.md](docs/ROADMAP.md) — milestone plan (v0.1.0 → v0.7.0).
 - [CHANGELOG.md](CHANGELOG.md) — cumulative log of every change, by version. [RELEASE_NOTES.md](RELEASE_NOTES.md) covers just the current unreleased cycle; past releases are archived under [docs/releases/](docs/releases/README.md).
+- [docs/tailscale-setup.md](docs/tailscale-setup.md) — setting up HTTPS via Tailscale-issued certs: prerequisites, enabling HTTPS Certificates on your tailnet, validating cert issuance and network reachability, and troubleshooting.
 
 ### Planned / research
 
