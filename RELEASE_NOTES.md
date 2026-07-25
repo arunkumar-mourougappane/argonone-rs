@@ -18,12 +18,15 @@
 
 ## Overview
 
-v0.6.1 is a small, unplanned fix on top of v0.6.0: the fan curve editor now honors the Celsius/Fahrenheit unit setting.
+v0.6.2 is a small, unplanned fix on top of v0.6.1: HTTPS over Tailscale-issued certs is now verified end-to-end against a real Tailscale-joined device, and a bug found in the process — the HTTPS listener hanging indefinitely on every connection — is fixed.
 
 ## What's Fixed
 
-- **Fan curve editor unit awareness** — `/fan`'s axis labels, point table, and "now" badge were hardcoded to °C regardless of the System page's unit toggle, unlike every other temperature reading in the app. They now display in whichever unit is configured; all internal curve math and the save API still speak Celsius, so saved curves are unaffected.
-- No fan-speed computation was ever unit-aware-broken — the control loop and every server-side target calculation always evaluate against raw Celsius. This was a display-only gap.
+- **HTTPS listener hang (Tailscale/ACME modes)** — `spawn_server` only put the TCP listener in non-blocking mode for plain-HTTP mode, not `tailscale`/`acme`. Passing a blocking listener into tokio's async accept loop (via `axum_server::from_tcp`) is erroneous per tokio's own docs — every TLS connection hung indefinitely right after the `Client Hello`, on both loopback and Tailscale-routed traffic. Now fixed for all three HTTPS modes.
+
+## What's New
+
+- [docs/tailscale-setup.md](docs/tailscale-setup.md) — a full Tailscale HTTPS setup and troubleshooting guide, written from an actual end-to-end setup: prerequisites, enabling HTTPS Certificates on your tailnet, validating cert issuance and client-side network reachability, and troubleshooting the issues above.
 
 ## Deploying
 
@@ -35,7 +38,7 @@ cargo install argonone-rs
 sudo systemctl restart argonone-rs
 ```
 
-See [README.md](README.md) for full deployment instructions.
+See [README.md](README.md) for full deployment instructions and [docs/tailscale-setup.md](docs/tailscale-setup.md) if you're setting up Tailscale HTTPS for the first time.
 
 ## What's Next
 

@@ -6,6 +6,16 @@ This file is the permanent, cumulative log across every version. For the prose w
 
 ## [Unreleased]
 
+## [v0.6.2] - 2026-07-25
+
+### Fixed
+
+- `spawn_server` only set the TCP listener non-blocking in the plain-HTTP (`Off`) branch, before handing it to `tokio::net::TcpListener::from_std`. The `Tailscale` and `Acme` branches passed the raw blocking `std::net::TcpListener` straight into `axum_server::from_tcp` (itself `TcpListener::from_std` under the hood), which tokio's own docs call out as erroneous — "all I/O operations on the listener will block the thread." Every connection to the Tailscale/ACME HTTPS listener hung indefinitely right after the TLS `Client Hello`, on both loopback and Tailscale-routed traffic, reproducible on a fresh restart. `set_nonblocking(true)` now runs once before the mode dispatch, shared by all three modes. Found and fixed via an actual end-to-end Tailscale HTTPS setup against a real Tailscale-joined device — see [docs/tailscale-setup.md](docs/tailscale-setup.md).
+
+### Added
+
+- [docs/tailscale-setup.md](docs/tailscale-setup.md): a Tailscale HTTPS setup and troubleshooting guide — prerequisites (joining the tailnet, enabling HTTPS Certificates in the admin console), finding the device's MagicDNS domain, validating cert issuance and network reachability, and troubleshooting both the account-level "HTTPS certs not enabled" error and the blocking-listener hang above.
+
 ## [v0.6.1] - 2026-07-19
 
 ### Fixed
