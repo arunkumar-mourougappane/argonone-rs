@@ -66,6 +66,32 @@ impl FanCurve {
         ])
     }
 
+    /// Default *HDD* curve — distinct from [`default_curve`](Self::default_curve)
+    /// (which is CPU-shaped): disks generally run cooler than a CPU, so
+    /// this ramps up at lower temperatures, matching
+    /// `04-fan-curve-editor.html`'s own `DEFAULT_HDD` preset. A
+    /// never-saved HDD curve used to silently fall back to the CPU
+    /// default too (`curve_store::load`'s only fallback), making the two
+    /// tabs on the fan curve page show identical data until HDD was
+    /// explicitly edited — this exists so they're visibly distinct from
+    /// first boot.
+    pub fn default_hdd_curve() -> Self {
+        FanCurve(vec![
+            CurvePoint {
+                temp_c: 55,
+                speed_pct: 100,
+            },
+            CurvePoint {
+                temp_c: 50,
+                speed_pct: 55,
+            },
+            CurvePoint {
+                temp_c: 40,
+                speed_pct: 30,
+            },
+        ])
+    }
+
     /// Highest-threshold-first speed lookup: the first point whose
     /// threshold the current temperature meets or exceeds wins; below all
     /// thresholds, the fan is off.

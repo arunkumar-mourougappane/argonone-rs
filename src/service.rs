@@ -88,7 +88,7 @@ pub async fn run() {
         .await
         .unwrap_or_else(|e| {
             tracing::error!(error = %e, "failed to load HDD fan curve from DB, using default");
-            FanCurve::default_curve()
+            FanCurve::default_hdd_curve()
         });
     let unit = crate::db::settings::load_units(&pool).await;
     // DB-backed as of v0.5.0 (mirrors fan curves/units); the config file

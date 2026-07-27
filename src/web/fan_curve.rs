@@ -63,7 +63,7 @@ pub async fn page(auth_session: AuthSession, State(state): State<AppState>) -> R
         .unwrap_or_else(|_| FanCurve::default_curve());
     let hdd = crate::fan::curve_store::load(&state.pool, "hdd")
         .await
-        .unwrap_or_else(|_| FanCurve::default_curve());
+        .unwrap_or_else(|_| FanCurve::default_hdd_curve());
     let unit = crate::db::settings::load_units(&state.pool).await;
 
     let html: Html<String> = render(
@@ -89,7 +89,13 @@ pub async fn get_curve(State(state): State<AppState>, Path(curve): Path<String>)
     };
     let fan_curve = crate::fan::curve_store::load(&state.pool, name)
         .await
-        .unwrap_or_else(|_| FanCurve::default_curve());
+        .unwrap_or_else(|_| {
+            if name == "hdd" {
+                FanCurve::default_hdd_curve()
+            } else {
+                FanCurve::default_curve()
+            }
+        });
     Json(to_dto_ascending(name, &fan_curve)).into_response()
 }
 

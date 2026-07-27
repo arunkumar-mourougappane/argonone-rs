@@ -19,7 +19,11 @@ pub async fn load(pool: &DbPool, curve: &str) -> Result<FanCurve, sqlx::Error> {
     .await?;
 
     if rows.is_empty() {
-        return Ok(FanCurve::default_curve());
+        return Ok(if curve == "hdd" {
+            FanCurve::default_hdd_curve()
+        } else {
+            FanCurve::default_curve()
+        });
     }
 
     Ok(FanCurve(
@@ -63,6 +67,15 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn hdd_falls_back_to_its_own_distinct_default_when_no_points_stored() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = crate::db::connect(&dir.path().join("t.db")).await.unwrap();
+        let curve = load(&pool, "hdd").await.unwrap();
+        assert_eq!(curve, FanCurve::default_hdd_curve());
+        assert_ne!(curve, FanCurve::default_curve());
+    }
+
+    #[tokio::test]
     async fn save_then_load_round_trips() {
         let dir = tempfile::tempdir().unwrap();
         let pool = crate::db::connect(&dir.path().join("t.db")).await.unwrap();
@@ -92,7 +105,7 @@ mod tests {
         save(&pool, "cpu", &cpu).await.unwrap();
 
         let hdd = load(&pool, "hdd").await.unwrap();
-        assert_eq!(hdd, FanCurve::default_curve());
+        assert_eq!(hdd, FanCurve::default_hdd_curve());
     }
 
     #[tokio::test]
