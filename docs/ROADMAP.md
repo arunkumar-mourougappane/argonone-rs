@@ -358,7 +358,16 @@ Turns "a binary that works" into "a thing someone installs."
   scripts (A§4.5) — `config.txt` I2C enablement stays a documented manual
   step, deliberately not automated
 - `argonone-rs admin backup` / `admin restore` using SQLite's online-backup
-  API (A§3.4)
+  API (A§3.4). Done — `src/admin.rs::backup`/`restore`, `argonone-rs admin
+  backup --output <path>` / `admin restore --input <path>`. Uses a
+  parameterized `VACUUM INTO` rather than shelling out to the `sqlite3`
+  CLI (the research doc's other suggested route): no external binary
+  dependency, and no dot-command shell-quoting to get right. `restore`
+  runs embedded migrations against `--input` first (so an older backup
+  comes up schema-current), checkpoints its WAL, then stages+renames it
+  onto the live DB path — atomic against a concurrent reader, though the
+  service still needs to be stopped first since a live writer could
+  otherwise reopen the old handle mid-swap.
 - Legacy config-file → SQLite one-time import, for anyone upgrading from
   a v0.1.0/v0.2.0 install or the original Python daemon (ties off the
   "config files are the only source of truth until v0.3.0" note above —

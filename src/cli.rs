@@ -3,6 +3,7 @@
 //! notes) alongside a normal lowercase `clap` subcommand for anything new.
 
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command(name = "argonone-rs", version, about = "Argon ONE/EON case daemon")]
@@ -41,6 +42,20 @@ pub enum AdminCommand {
     ResetPassword {
         #[arg(long)]
         username: String,
+    },
+    /// Writes a consistent live snapshot of the database to `--output`,
+    /// using SQLite's own online-backup mechanism (A§3.4) — safe to run
+    /// without stopping the service.
+    Backup {
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Restores `--input` (a prior `backup` or `argonone.db`) as the live
+    /// database (A§3.4). Stop the service first — this replaces the file
+    /// the running daemon has open.
+    Restore {
+        #[arg(long)]
+        input: PathBuf,
     },
 }
 

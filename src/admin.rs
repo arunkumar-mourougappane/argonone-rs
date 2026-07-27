@@ -59,3 +59,94 @@ pub async fn reset_password(username: &str) {
         }
     }
 }
+
+/// Writes a consistent live snapshot of the running database to `output`
+/// (A§3.4) — `VACUUM INTO` is SQLite's own atomic online-backup mechanism,
+/// safe to run against the live WAL-mode database without stopping the
+/// service. Preferred here over shelling out to the `sqlite3` CLI (the
+/// research doc's other suggested route) since it needs no external
+/// binary and takes `output` as a bound parameter instead of a
+/// dot-command string that would need shell-style quoting.
+pub async fn backup(output: &Path) {
+    let db_path = crate::service::db_path();
+    let pool = open_db(&db_path).await;
+
+    if let Some(parent) = output.parent().filter(|p| !p.as_os_str().is_empty())
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        eprintln!("error: cannot create {}: {e}", parent.display());
+        std::process::exit(1);
+    }
+
+    match sqlx::query("VACUUM INTO ?")
+        .bind(output.to_string_lossy().as_ref())
+        .execute(&pool)
+        .await
+    {
+        Ok(_) => println!("Backup written to {}.", output.display()),
+        Err(e) => {
+            eprintln!("error: backup failed: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Restores `input` (a file produced by [`backup`], or any prior
+/// `argonone.db`) as the live database (A§3.4). Runs embedded migrations
+/// against `input` first, so restoring a backup taken on an older release
+/// still comes up schema-current. The swap onto `db_path` is a same-
+/// directory rename, so it's atomic against a concurrently *reading*
+/// process — this still expects the service to be stopped first, since a
+/// live writer could otherwise reopen the old file handle mid-swap.
+pub async fn restore(input: &Path) {
+    if !input.is_file() {
+        eprintln!("error: no such file: {}", input.display());
+        std::process::exit(1);
+    }
+
+    let pool = crate::db::connect(input).await.unwrap_or_else(|e| {
+        eprintln!(
+            "error: {} is not a usable argonone-rs database: {e}",
+            input.display()
+        );
+        std::process::exit(1);
+    });
+    if let Err(e) = sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+        .execute(&pool)
+        .await
+    {
+        eprintln!("error: failed to checkpoint {}: {e}", input.display());
+        std::process::exit(1);
+    }
+    pool.close().await;
+
+    let db_path = crate::service::db_path();
+    if let Some(parent) = db_path.parent().filter(|p| !p.as_os_str().is_empty())
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        eprintln!("error: cannot create {}: {e}", parent.display());
+        std::process::exit(1);
+    }
+
+    let tmp_path = db_path.with_extension("restore-tmp");
+    if let Err(e) = std::fs::copy(input, &tmp_path) {
+        eprintln!(
+            "error: failed to stage restore at {}: {e}",
+            tmp_path.display()
+        );
+        std::process::exit(1);
+    }
+    if let Err(e) = std::fs::rename(&tmp_path, &db_path) {
+        let _ = std::fs::remove_file(&tmp_path);
+        eprintln!("error: failed to install {}: {e}", db_path.display());
+        std::process::exit(1);
+    }
+    // Drop stale sidecars from the file just replaced — a leftover -wal
+    // could otherwise get replayed on top of the just-restored data.
+    for ext in ["-wal", "-shm"] {
+        let _ = std::fs::remove_file(format!("{}{ext}", db_path.display()));
+    }
+
+    println!("Restored {} to {}.", input.display(), db_path.display());
+    println!("Stop and restart the argonone-rs service for this to take effect.");
+}

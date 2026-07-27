@@ -31,6 +31,8 @@ async fn main() {
         Command::Status => service::print_status().await,
         Command::Admin { command } => match command {
             AdminCommand::ResetPassword { username } => admin::reset_password(&username).await,
+            AdminCommand::Backup { output } => admin::backup(&output).await,
+            AdminCommand::Restore { input } => admin::restore(&input).await,
         },
     }
 }
