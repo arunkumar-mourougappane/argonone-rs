@@ -5,17 +5,17 @@
 .tabs{display:flex;gap:4px;background:var(--panel-2);border:1px solid var(--border);border-radius:9px;padding:3px;width:max-content;margin-bottom:18px;}
 .tabs button{border:none;background:none;font-family:var(--font-ui);font-size:12.5px;font-weight:600;padding:7px 16px;border-radius:7px;color:var(--muted);cursor:pointer;}
 .tabs button.active{background:var(--panel);color:var(--text);box-shadow:var(--shadow);}
-.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px 22px;}
+/* max-width — `.content` has no max-width of its own, so on a wide window
+   this is what stops the whole card (chart, table, buttons, note alike)
+   from sprawling edge to edge instead of staying a sane, readable width. */
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px 22px;max-width:720px;}
 .card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
 .card-title{font-weight:600;font-size:14px;}
 .badge{font-family:var(--font-mono);font-size:10.5px;padding:3px 9px;border-radius:20px;font-weight:600;background:var(--good-soft);color:var(--good);}
 .chart-wrap{position:relative;margin:14px 0 4px;}
-/* height:280px (fixed) + width:100% + preserveAspectRatio="none" only
-   matched the 620x280 viewBox at exactly 620px wide — any other width
-   (the card has no max-width, so it can be far wider) stretched the
-   horizontal axis alone, turning the round data-point circles into
-   ellipses. aspect-ratio keeps width and height scaling together at the
-   viewBox's own 620:280 ratio, so the scale stays uniform at any width. */
+/* aspect-ratio (not a fixed height) keeps the chart's shape correct — no
+   stretched-into-ellipse points — at any width the now width-100%-of-
+   its-capped-card container ends up being, not just exactly 620px. */
 .chart-wrap svg{width:100%;height:auto;aspect-ratio:620/280;overflow:visible;}
 .axis-label{font-family:var(--font-mono);font-size:10px;fill:var(--muted);}
 .gridline{stroke:var(--border);stroke-width:1;}
