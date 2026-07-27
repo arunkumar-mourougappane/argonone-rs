@@ -18,10 +18,10 @@
 
 ## Highlights
 
-v0.7.0 (in progress) — packaging and operability. So far: `.deb` packaging via `cargo-deb` (systemd unit, I2C udev rule, `argonone` system-user creation, and the daemon's own privilege drop off `root`), `admin backup`/`admin restore`, one-time legacy config-file import, a diagnosable read-only-rootfs startup error, critical-state webhook notifications, dashboard card drag-reorder, and a system log viewer. See [docs/ROADMAP.md](docs/ROADMAP.md#v070--packaging--operability) for the full item-by-item status.
+v0.7.0 — packaging and operability. `.deb` packaging via `cargo-deb` (systemd unit, I2C udev rule, `argonone` system-user creation, and the daemon's own privilege drop off `root`), `admin backup`/`admin restore`, one-time legacy config-file import, a diagnosable read-only-rootfs startup error, critical-state webhook notifications, dashboard card drag-reorder, and a system log viewer. See [docs/ROADMAP.md](docs/ROADMAP.md#v070--packaging--operability) for the full item-by-item status.
 
-**Not ready to tag yet** — two v0.7.0 items are still outstanding: install docs verified against real Ubuntu 26.04-on-Pi hardware, and the `.deb` package itself installed and confirmed on that hardware (everything above has only been verified in-process/locally, not on the actual Pi target).
+Verified on real Ubuntu 26.04-on-Pi hardware (2026-07-26): both install paths (the `.deb` package and the manual `scripts/deploy-local.sh` path) confirmed clean, no issues found.
 
 ## What's next
 
-Closing the two hardware-verification gaps above before this milestone can ship as v0.7.0.
+No milestone beyond v0.7.0 is planned yet — see [docs/ROADMAP.md](docs/ROADMAP.md)'s "Ongoing, not milestone-gated" section and its note on `v1.0.0` criteria, still an open call pending broader field use.

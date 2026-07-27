@@ -370,11 +370,12 @@ Turns "a binary that works" into "a thing someone installs."
   the binary to `/usr/bin` (not `/usr/local/bin`) so one unit file works
   for either. `.github/workflows/release.yml` gained a `build-deb` job
   (required, like the Pi binary build) so every tagged release actually
-  publishes a `.deb` asset, not just raw binaries. Verified locally: a
-  real `aarch64` `.deb` built end-to-end via `cargo deb` (cross-compiled,
-  since `cargo-deb` isn't Linux-only for the build step even though
-  `dpkg-deb` itself is) and its control/data archives inspected by
-  hand — not yet installed on a real Ubuntu-on-Pi target.
+  publishes a `.deb` asset, not just raw binaries. Verified on real
+  Ubuntu 26.04-on-Pi hardware (2026-07-26), in addition to the local
+  build-and-inspect pass: `dpkg -i` installed cleanly, `postinst`
+  created the `argonone` account and group memberships correctly, and
+  the systemd unit came up enabled and running under it with no
+  further manual steps beyond the documented `config.txt` I2C step.
 - `argonone-rs admin backup` / `admin restore` using SQLite's online-backup
   API (A§3.4). Done — `src/admin.rs::backup`/`restore`, `argonone-rs admin
   backup --output <path>` / `admin restore --input <path>`. Uses a
@@ -396,7 +397,15 @@ Turns "a binary that works" into "a thing someone installs."
   left alone rather than clobbered by a stale file.
 - Install docs verified against real Ubuntu 26.04-on-Pi hardware — several
   claims in A§4.3 are flagged "needs hardware verification, not assumed";
-  this is where that verification actually has to happen before shipping
+  this is where that verification actually has to happen before shipping.
+  Verified on real Ubuntu 26.04-on-Pi hardware (2026-07-26) — both install
+  paths confirmed clean, no issues found: the `.deb` package (`dpkg -i`,
+  exercising `cargo-deb`'s generated `postinst`'s `argonone` user/group
+  creation, the I2C udev rule, and the systemd-units enable/start
+  integration) and the manual path (`scripts/deploy-local.sh`, exercising
+  its own equivalent user/group setup). A§4.3's Ubuntu-on-Pi group/udev
+  behavior claims (`dialout` covering I2C + GPIO chardev access,
+  `systemd-journal` for the log viewer) hold as documented.
 - Read-only-rootfs startup failure gets a diagnosable error (A§3.5, found
   comparing against RPi-Monitor's read-only-root support): if
   `/var/lib/argonone-rs` isn't writable, detect that specific failure and

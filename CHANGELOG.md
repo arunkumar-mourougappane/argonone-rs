@@ -6,9 +6,11 @@ This file is the permanent, cumulative log across every version. For the prose w
 
 ## [Unreleased]
 
-v0.7.0 work in progress — packaging and operability. See [docs/ROADMAP.md](docs/ROADMAP.md#v070--packaging--operability).
+v0.7.0 — packaging and operability. Every roadmap item is done; see [docs/ROADMAP.md](docs/ROADMAP.md#v070--packaging--operability).
 
 ### Added
+
+- v0.7.0 verified on real Ubuntu 26.04-on-Pi hardware (2026-07-26): both install paths confirmed clean, no issues found — the `.deb` package (`dpkg -i`, exercising `cargo-deb`'s generated `postinst`'s `argonone` user/group creation, the I2C udev rule, and the systemd-units enable/start integration) and the manual path (`scripts/deploy-local.sh`). Closes A§4.3's Ubuntu-on-Pi group/udev behavior claims (`dialout` covering I2C + GPIO chardev access, `systemd-journal` for the log viewer), previously only verified locally/in-process.
 
 - `.deb` packaging via `cargo-deb` (A§4.5): `Cargo.toml`'s `[package.metadata.deb]` bundles the systemd unit, an I2C udev rule (`packaging/udev/60-argonone-i2c.rules`), and `argonone` system-user creation into generated maintainer scripts (`packaging/deb/postinst`/`postrm`). The systemd unit moved from `User=root` to a dedicated `argonone` account (`SupplementaryGroups=dialout systemd-journal`); `scripts/deploy-local.sh` (the manual install path) does the same account/group setup so both paths land on the same permission model, and both now install the binary to `/usr/bin` instead of `/usr/local/bin`. `.github/workflows/release.yml` gained a required `build-deb` job so every tagged release publishes a `.deb` asset.
 - `argonone-rs admin backup --output <path>` / `admin restore --input <path>` (A§3.4): a parameterized `VACUUM INTO` for backup (no external `sqlite3` binary, no dot-command shell-quoting), and a migrate-then-checkpoint-then-atomic-rename restore.
