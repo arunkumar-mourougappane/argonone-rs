@@ -1,0 +1,8 @@
+# /dev/i2c-1 is not guaranteed to be group-`dialout` (or even to have a
+# dedicated group) out of the box on Ubuntu Server for Raspberry Pi,
+# unlike Raspberry Pi OS's raspberrypi-sys-mods (A§4.3). Reuses the
+# existing `dialout` group rather than inventing a new `i2c` group —
+# Ubuntu's stock udev rules already put GPIO chardev access under
+# `dialout`, so one group covers both, and the `argonone` service
+# account (packaging/deb/postinst) only needs to join it once.
+SUBSYSTEM=="i2c-dev", KERNEL=="i2c-1", GROUP="dialout", MODE="0660"

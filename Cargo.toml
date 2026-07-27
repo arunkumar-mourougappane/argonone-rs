@@ -59,3 +59,38 @@ ssd1306 = "0.10.0"
 http-body-util = "0.1.4"
 tempfile = "3"
 tower = { version = "0.5.3", features = ["util"] }
+
+# `cargo deb` packaging (A§4.5, v0.7.0): bundles the systemd unit, the
+# /dev/i2c-1 udev rule, and `argonone` system-user creation into
+# generated maintainer scripts. `config.txt` I2C enablement stays a
+# documented manual step (README.md) — deliberately not automated here,
+# since editing the bootloader config unattended (and possibly needing
+# a reboot) is a bigger blast radius than a package install should
+# silently take.
+[package.metadata.deb]
+maintainer = "Arunkumar Mourougappane <amouroug.dev@gmail.com>"
+copyright = "2026, Arunkumar Mourougappane <amouroug.dev@gmail.com>"
+license-file = ["LICENSE", "0"]
+extended-description = """\
+Also handles OLED display and RTC wake/sleep scheduling on the EON \
+case, and includes multi-user auth/RBAC for the web UI. Installs and \
+enables the argonone-rs systemd service; requires I2C enabled in \
+/boot/firmware/config.txt first (a manual step, deliberately not \
+automated here) — see the project README for the full setup."""
+# SQLite is statically bundled into the binary (libsqlite3-sys's
+# default "bundled" feature — confirmed via `objdump -p`'s NEEDED
+# list, no libsqlite3.so). The only real runtime deps left are glibc
+# and friends, always present on any Debian/Ubuntu system, so this
+# skips `$auto`'s dpkg-shlibdeps — cross-arch shlibdeps needs a
+# registered arm64 multiarch sysroot in CI, real complexity for a
+# dependency this package would need unconditionally anyway.
+section = "utils"
+priority = "optional"
+depends = "libc6"
+maintainer-scripts = "packaging/deb"
+assets = [
+    ["target/release/argonone-rs", "usr/bin/", "755"],
+    ["packaging/udev/60-argonone-i2c.rules", "etc/udev/rules.d/60-argonone-i2c.rules", "644"],
+    ["README.md", "usr/share/doc/argonone-rs/README.md", "644"],
+]
+systemd-units = { unit-scripts = "packaging/systemd", enable = true, start = true }

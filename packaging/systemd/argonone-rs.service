@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=notify
-ExecStart=/usr/local/bin/argonone-rs SERVICE
+ExecStart=/usr/bin/argonone-rs SERVICE
 Restart=on-failure
 RestartSec=5
 
@@ -16,12 +16,19 @@ RestartSec=5
 StateDirectory=argonone-rs
 StateDirectoryMode=0750
 
-# Raw I2C + GPIO character-device access currently requires root (W§1.4).
-# Dropping to a dedicated system user (A§4.1's "Option A": a static
-# `argonone` system account, `SupplementaryGroups=dialout` for I2C/GPIO
-# access) needs that account to actually exist first — that's `.deb`
-# maintainer-script scope (v0.7.0, docs/ROADMAP.md), not done here yet.
-User=root
+# Dedicated system account (A§4.1's "Option A") instead of root — raw
+# I2C + GPIO character-device access only needs group membership, not
+# a privileged user (W§1.4). `dialout` covers both (packaging/udev/
+# 60-argonone-i2c.rules puts /dev/i2c-1 there too, matching Ubuntu's
+# own GPIO chardev group). `systemd-journal` is what the log viewer
+# page (v0.7.0, W§3.8) needs to read this unit's own journal entries —
+# without it, `journalctl -u argonone-rs` run as `argonone` sees
+# nothing. The `argonone` account/group-membership itself is created
+# by packaging/deb/postinst (.deb installs) or scripts/deploy-local.sh
+# (manual installs) — this unit assumes it already exists by the time
+# systemd tries to start as it.
+User=argonone
+SupplementaryGroups=dialout systemd-journal
 
 [Install]
 WantedBy=multi-user.target

@@ -65,8 +65,29 @@ if command -v file >/dev/null 2>&1; then
   echo "==> Binary: $(file -b "$BINARY")"
 fi
 
-echo "==> Installing $BINARY -> /usr/local/bin/argonone-rs"
-sudo install -m 755 "$BINARY" /usr/local/bin/argonone-rs
+echo "==> Installing $BINARY -> /usr/bin/argonone-rs"
+sudo install -m 755 "$BINARY" /usr/bin/argonone-rs
+
+# The unit runs as a dedicated `argonone` account (A§4.1), not root —
+# create it and the I2C udev rule the same way the .deb package's own
+# postinst does (packaging/deb/postinst), so a manual install ends up
+# with the same permission model.
+if ! id argonone >/dev/null 2>&1; then
+  echo "==> Creating system user 'argonone'"
+  sudo useradd --system --no-create-home --shell /usr/sbin/nologin \
+    --home-dir /var/lib/argonone-rs argonone
+fi
+sudo usermod -aG dialout,systemd-journal argonone
+
+UDEV_RULE="$REPO_ROOT/packaging/udev/60-argonone-i2c.rules"
+if [ -f "$UDEV_RULE" ]; then
+  echo "==> Installing $UDEV_RULE -> /etc/udev/rules.d/60-argonone-i2c.rules"
+  sudo install -m 644 "$UDEV_RULE" /etc/udev/rules.d/60-argonone-i2c.rules
+  if command -v udevadm >/dev/null 2>&1; then
+    sudo udevadm control --reload-rules
+    sudo udevadm trigger --subsystem-match=i2c-dev || true
+  fi
+fi
 
 echo "==> Installing $UNIT -> /etc/systemd/system/argonone-rs.service"
 sudo install -m 644 "$UNIT" /etc/systemd/system/argonone-rs.service

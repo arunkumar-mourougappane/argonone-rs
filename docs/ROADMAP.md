@@ -356,7 +356,25 @@ Turns "a binary that works" into "a thing someone installs."
 - `.deb` via `cargo-deb`: bundles the systemd unit, the `/dev/i2c-1` udev
   rule, and `argonone` system-user creation into generated maintainer
   scripts (A§4.5) — `config.txt` I2C enablement stays a documented manual
-  step, deliberately not automated
+  step, deliberately not automated. Done — `Cargo.toml`'s
+  `[package.metadata.deb]`, `packaging/udev/60-argonone-i2c.rules`,
+  `packaging/deb/postinst`/`postrm`. `postinst` creates the `argonone`
+  system account (idempotent across upgrades) and joins it to `dialout`
+  (I2C/GPIO) and `systemd-journal` (the v0.7.0 log viewer needs to read
+  its own unit's journal as a non-root account) before cargo-deb's own
+  generated systemd-units fragment tries to start a service running as
+  that account. The systemd unit itself moved from `User=root` to
+  `User=argonone` as part of this — `scripts/deploy-local.sh` (the
+  manual, non-.deb install path) does the same account/group setup so
+  both paths land on the same permission model, and both now install
+  the binary to `/usr/bin` (not `/usr/local/bin`) so one unit file works
+  for either. `.github/workflows/release.yml` gained a `build-deb` job
+  (required, like the Pi binary build) so every tagged release actually
+  publishes a `.deb` asset, not just raw binaries. Verified locally: a
+  real `aarch64` `.deb` built end-to-end via `cargo deb` (cross-compiled,
+  since `cargo-deb` isn't Linux-only for the build step even though
+  `dpkg-deb` itself is) and its control/data archives inspected by
+  hand — not yet installed on a real Ubuntu-on-Pi target.
 - `argonone-rs admin backup` / `admin restore` using SQLite's online-backup
   API (A§3.4). Done — `src/admin.rs::backup`/`restore`, `argonone-rs admin
   backup --output <path>` / `admin restore --input <path>`. Uses a

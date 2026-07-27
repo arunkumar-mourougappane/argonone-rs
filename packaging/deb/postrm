@@ -1,0 +1,13 @@
+#!/bin/sh
+# Only on `purge` (not a plain remove, which should leave the account
+# and SQLite state alone in case of a reinstall) — drop the service
+# account this package's postinst created.
+set -e
+
+if [ "$1" = "purge" ]; then
+    if id argonone >/dev/null 2>&1; then
+        userdel argonone || true
+    fi
+fi
+
+#DEBHELPER#

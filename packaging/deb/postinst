@@ -1,0 +1,26 @@
+#!/bin/sh
+# Runs on both a fresh install and a package upgrade (dpkg invokes
+# postinst either way) — every step here must be idempotent so an
+# upgrade doesn't error re-creating something that already exists
+# (A§4.5). Runs before cargo-deb's own generated systemd-units fragment
+# (appended after this file), so the `argonone` account exists before
+# that fragment tries to start a service running as it.
+set -e
+
+if ! id argonone >/dev/null 2>&1; then
+    useradd --system --no-create-home --shell /usr/sbin/nologin \
+        --home-dir /var/lib/argonone-rs argonone
+fi
+# I2C (this package's own udev rule) and GPIO chardev access (Ubuntu's
+# stock udev rules) both live under `dialout` — see
+# packaging/udev/60-argonone-i2c.rules for why one group covers both.
+# `systemd-journal` is what the log viewer page (v0.7.0) needs to read
+# this unit's own journal entries as a non-root account.
+usermod -aG dialout,systemd-journal argonone
+
+if command -v udevadm >/dev/null 2>&1; then
+    udevadm control --reload-rules || true
+    udevadm trigger --subsystem-match=i2c-dev || true
+fi
+
+#DEBHELPER#

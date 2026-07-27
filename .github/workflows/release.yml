@@ -54,6 +54,57 @@ jobs:
           path: ${{ steps.package.outputs.path }}
           if-no-files-found: error
 
+  # `.deb` package (A§4.5, v0.7.0): bundles the systemd unit, the I2C
+  # udev rule, and `argonone` system-user creation into generated
+  # maintainer scripts — see Cargo.toml's [package.metadata.deb] and
+  # packaging/deb/. Built on real Linux (not macOS, where `strip`/
+  # `dpkg-shlibdeps` behave differently) so the packaging step is
+  # actually exercised the way an installer would get it.
+  build-deb:
+    name: Build .deb package (aarch64 — Raspberry Pi)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install aarch64 cross toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: aarch64-unknown-linux-gnu-deb
+
+      - name: Install cargo-deb
+        run: cargo install cargo-deb --locked
+
+      - name: Build .deb
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo deb --target aarch64-unknown-linux-gnu --locked
+
+      - name: Rename .deb to include the tag
+        id: package
+        shell: bash
+        run: |
+          src="$(ls target/debian/*.deb | head -1)"
+          dest="argonone-rs-${{ github.ref_name }}-linux-aarch64.deb"
+          cp "$src" "$dest"
+          echo "path=$dest" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-binary-deb
+          path: ${{ steps.package.outputs.path }}
+          if-no-files-found: error
+
   # Secondary target: macOS, for dev-workstation convenience. Not the
   # deploy target, so it doesn't block the release if it fails — the
   # release job proceeds on the Raspberry Pi build alone if needed.
@@ -94,8 +145,8 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: [build-raspberry-pi, build-macos]
-    if: always() && needs.build-raspberry-pi.result == 'success'
+    needs: [build-raspberry-pi, build-deb, build-macos]
+    if: always() && needs.build-raspberry-pi.result == 'success' && needs.build-deb.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write

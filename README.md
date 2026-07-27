@@ -21,6 +21,18 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for the full v0.1.0 → v0.7.0 milestone 
 cargo install argonone-rs
 ```
 
+### `.deb` package (Raspberry Pi / Debian, Ubuntu)
+
+Each [GitHub Release](https://github.com/arunkumar-mourougappane/argonone-rs/releases) includes an `aarch64` `.deb`. It installs the binary, the systemd unit, an I2C udev rule, and creates a dedicated `argonone` system account (`dialout` group, for I2C/GPIO access) — no manual `useradd`/unit-file copying needed:
+
+```sh
+sudo dpkg -i argonone-rs-vX.Y.Z-linux-aarch64.deb
+```
+
+The service is enabled and started automatically. **I2C still needs to be enabled in `/boot/firmware/config.txt` first** (`dtparam=i2c_arm=on`, then reboot) — this is deliberately not automated by the package, since editing the bootloader config unattended is a bigger blast radius than a package install should silently take. See Troubleshooting below if the daemon starts but can't reach the I2C bus.
+
+To build the `.deb` yourself: `cargo install cargo-deb`, then `cargo deb --target aarch64-unknown-linux-gnu` from the repo root (requires the cross-toolchain below).
+
 ### Build from source
 
 ```sh
@@ -89,7 +101,7 @@ Once logged in, the sidebar has **Dashboard** (full card grid — Fan, Power & R
 ### Troubleshooting
 
 - **`sudo systemctl start argonone-rs` hangs, `systemctl list-jobs` shows it queued behind `plymouth-quit-wait.service` ("running" forever).** A headless-boot Plymouth quirk unrelated to this daemon — it can stall `multi-user.target`, which the unit is ordered after. Unstick it with `sudo systemctl stop plymouth-quit-wait.service`; the queued jobs (including `argonone-rs`) then proceed immediately.
-- **`status=203/EXEC` / "Exec format error" in `journalctl -u argonone-rs`.** The binary at `/usr/local/bin/argonone-rs` is the wrong architecture — almost always caused by cross-compiling and then copying `target/release/argonone-rs` (the *host* build) instead of `target/aarch64-unknown-linux-gnu/release/argonone-rs` (the actual Pi binary). Verify with `file /usr/local/bin/argonone-rs` on the Pi — it should say `ELF 64-bit LSB pie executable, ARM aarch64`.
+- **`status=203/EXEC` / "Exec format error" in `journalctl -u argonone-rs`.** The binary at `/usr/bin/argonone-rs` is the wrong architecture — almost always caused by cross-compiling and then copying `target/release/argonone-rs` (the *host* build) instead of `target/aarch64-unknown-linux-gnu/release/argonone-rs` (the actual Pi binary). Verify with `file /usr/bin/argonone-rs` on the Pi — it should say `ELF 64-bit LSB pie executable, ARM aarch64`.
 - **Upgrading a box that still has the original Python daemon installed.** `argononed.service` will compete with `argonone-rs` for the same I2C bus (`0x1a`) if both are enabled. Disable the old one first: `sudo systemctl disable --now argononed.service`.
 
 ## Docs
