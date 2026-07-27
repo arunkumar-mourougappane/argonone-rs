@@ -65,7 +65,11 @@ pub async fn run() {
     let pool = match crate::db::connect(&db_path).await {
         Ok(pool) => pool,
         Err(e) => {
-            tracing::error!(error = %e, path = %db_path.display(), "failed to open database, exiting");
+            if let Some(diagnosis) = crate::db::diagnose_unwritable_state_dir(&db_path) {
+                tracing::error!(path = %db_path.display(), "{diagnosis}");
+            } else {
+                tracing::error!(error = %e, path = %db_path.display(), "failed to open database, exiting");
+            }
             std::process::exit(1);
         }
     };

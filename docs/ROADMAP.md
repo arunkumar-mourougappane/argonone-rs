@@ -373,7 +373,10 @@ Turns "a binary that works" into "a thing someone installs."
   `sqlx::Error`. Not full read-only-rootfs support (degrading writes
   gracefully) — that cuts against the SQLite-is-sole-source-of-truth
   design (A§1–§3) and isn't scoped here, just a clearer failure mode for
-  the one that already happens today.
+  the one that already happens today. Done — `src::db::mod::diagnose_unwritable_state_dir`
+  (a pre-flight write-probe against the state directory, distinguishing
+  EROFS/permission-denied from other failures), wired into both
+  `service::run`'s and every `admin` subcommand's DB-open path.
 - Customizable dashboard card layout (W§3.7, also found comparing against
   RPi-Monitor): drag-and-drop reorder of the dashboard's card grid (Fan,
   Power & RTC, Network, Storage, Display, System, Signed in as), same

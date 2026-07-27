@@ -3,7 +3,26 @@
 //! entirely (A§1.2 Tier 2 — the "no admin can log in" fallback).
 
 use crate::auth::hash_password;
+use crate::db::DbPool;
 use rand::distr::{Alphanumeric, SampleString};
+use std::path::Path;
+
+/// Opens `path` as an argonone-rs database, exiting with a diagnosable
+/// message on failure — shared by every `admin` subcommand that needs a
+/// live pool, so the read-only-rootfs diagnosis (A§3.5) applies uniformly.
+async fn open_db(path: &Path) -> DbPool {
+    match crate::db::connect(path).await {
+        Ok(pool) => pool,
+        Err(e) => {
+            if let Some(diagnosis) = crate::db::diagnose_unwritable_state_dir(path) {
+                eprintln!("error: {diagnosis}");
+            } else {
+                eprintln!("error: failed to open database at {}: {e}", path.display());
+            }
+            std::process::exit(1);
+        }
+    }
+}
 
 /// Resets `username`'s password to a freshly generated temporary one,
 /// printed to stdout, and forces a change on next login. Exits non-zero
@@ -11,16 +30,7 @@ use rand::distr::{Alphanumeric, SampleString};
 /// one-shot operator command, not a service that should limp along.
 pub async fn reset_password(username: &str) {
     let db_path = crate::service::db_path();
-    let pool = match crate::db::connect(&db_path).await {
-        Ok(pool) => pool,
-        Err(e) => {
-            eprintln!(
-                "error: failed to open database at {}: {e}",
-                db_path.display()
-            );
-            std::process::exit(1);
-        }
-    };
+    let pool = open_db(&db_path).await;
 
     let temp_password = Alphanumeric.sample_string(&mut rand::rng(), 16);
     let hash = hash_password(&temp_password);
