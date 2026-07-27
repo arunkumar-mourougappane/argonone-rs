@@ -7,13 +7,15 @@
 
 use super::AppState;
 use super::templates::render;
-use crate::auth::AuthSession;
+use crate::auth::{AuthSession, Role};
 use crate::hardware::RtcDateTime;
 use crate::hardware::board::Board;
+use axum::Json;
 use axum::extract::State;
+use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use minijinja::context;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Local weekday/hour/minute via the `date` command — matches this
 /// codebase's existing "shell out to a system tool" convention
@@ -190,6 +192,8 @@ pub async fn show(auth_session: AuthSession, State(state): State<AppState>) -> R
         .ok()
         .flatten();
 
+    let dashboard_layout = crate::db::settings::load_dashboard_layout(&state.pool).await;
+
     let html: Html<String> = render(
         &state.env,
         "dashboard.html",
@@ -197,6 +201,7 @@ pub async fn show(auth_session: AuthSession, State(state): State<AppState>) -> R
             username => user.username,
             role => user.role().as_str(),
             active_page => "dashboard",
+            can_edit => user.role() >= Role::Operator,
             is_eon => is_eon,
             has_case => has_case,
             board_label => board_label,
@@ -210,9 +215,80 @@ pub async fn show(auth_session: AuthSession, State(state): State<AppState>) -> R
             next_sleep => next_sleep,
             disk_rows => disk_rows,
             full_user => full_user,
+            dashboard_layout => dashboard_layout,
         },
     );
     html.into_response()
+}
+
+#[derive(Debug, Serialize)]
+pub struct DashboardLayoutResponse {
+    pub order: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PutDashboardLayoutRequest {
+    pub order: Vec<String>,
+}
+
+/// Keeps a client-submitted order valid without rejecting it outright —
+/// unlike the fan curve/RTC schedule, a bad dashboard layout has zero
+/// safety impact, just a cosmetic one, so this is worth self-healing
+/// rather than a 422 the operator has to puzzle over. Unknown keys are
+/// dropped, duplicates collapse to their first occurrence, and any
+/// known key missing from the input is appended in its default-order
+/// position — always yields a complete permutation of
+/// `DEFAULT_DASHBOARD_LAYOUT`.
+fn sanitize_layout(order: &[String]) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut result: Vec<String> = order
+        .iter()
+        .filter(|k| {
+            crate::db::settings::DEFAULT_DASHBOARD_LAYOUT.contains(&k.as_str())
+                && seen.insert(k.as_str())
+        })
+        .cloned()
+        .collect();
+    for key in crate::db::settings::DEFAULT_DASHBOARD_LAYOUT {
+        if !seen.contains(key) {
+            result.push(key.to_string());
+        }
+    }
+    result
+}
+
+pub async fn get_dashboard_layout(State(state): State<AppState>) -> Json<DashboardLayoutResponse> {
+    let order = crate::db::settings::load_dashboard_layout(&state.pool).await;
+    Json(DashboardLayoutResponse { order })
+}
+
+pub async fn put_dashboard_layout(
+    auth_session: AuthSession,
+    State(state): State<AppState>,
+    Json(body): Json<PutDashboardLayoutRequest>,
+) -> Response {
+    let Some(user) = &auth_session.user else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    if user.role() < Role::Operator {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
+    let order = sanitize_layout(&body.order);
+    if let Err(e) = crate::db::settings::save_dashboard_layout(&state.pool, &order, user.id).await {
+        tracing::error!(error = %e, "failed to save dashboard layout");
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+
+    let _ = sqlx::query(
+        "INSERT INTO audit_log (user_id, action, detail) VALUES (?1, 'settings.update_dashboard_layout', ?2)",
+    )
+    .bind(user.id)
+    .bind(serde_json::to_string(&order).unwrap_or_default())
+    .execute(&state.pool)
+    .await;
+
+    Json(DashboardLayoutResponse { order }).into_response()
 }
 
 #[cfg(test)]

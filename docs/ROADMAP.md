@@ -419,7 +419,20 @@ Turns "a binary that works" into "a thing someone installs."
   interaction, not building the cards. New `settings` key
   (`dashboard_layout`), `GET/PUT` following the existing
   DB-backed-with-fallback-default pattern — no new architecture. Mocked
-  at `docs/mockups/11-dashboard-reorder.html`.
+  at `docs/mockups/11-dashboard-reorder.html`. Done —
+  `db::settings::load`/`save_dashboard_layout` (global, one layout for
+  everyone with write access — the mockup's own "saved per account"
+  copy doesn't match this; per-account would need new schema, which the
+  roadmap's own "no new architecture" call already ruled out), wired
+  into `src/web/dashboard.rs`/`templates/dashboard.html`. Reorders the
+  already server-rendered cards client-side (same native HTML5
+  drag-and-drop pattern `oled.html`'s screen list uses) rather than
+  re-templating their content, since the cards embed live data the
+  server already computed; a bad/unknown key in a PUT is sanitized
+  (dropped/de-duped/backfilled) rather than rejected, since a bad
+  layout has zero safety impact unlike the fan curve or RTC schedule.
+  Verified live in a real browser: dragging a card actually moves it
+  and the new order survives a page reload.
 - System log viewer (W§3.8, found comparing against Cockpit's Logs
   module): admin-only, read-only page tailing `journalctl -u
   argonone-rs` — the only way to see daemon logs today is SSH. Shells

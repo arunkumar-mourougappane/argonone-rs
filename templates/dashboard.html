@@ -42,6 +42,20 @@
 .net-rate.up{color:var(--text);}
 .live-indicator{font-family:var(--font-mono);font-size:11.5px;color:var(--muted);}
 
+.head-actions{display:flex;align-items:center;gap:14px;}
+.btn-outline{display:flex;align-items:center;gap:7px;padding:8px 14px;border-radius:8px;border:1px solid var(--border);background:var(--panel);color:var(--text);font-family:var(--font-ui);font-weight:600;font-size:12.5px;cursor:pointer;}
+.btn-outline svg{width:14px;height:14px;}
+.btn-outline:hover{background:var(--panel-2);}
+.edit-banner{display:none;align-items:center;justify-content:space-between;background:var(--accent-soft);border:1px solid var(--accent);border-radius:10px;padding:11px 16px;margin-bottom:16px;font-size:12.5px;color:var(--text);}
+.edit-banner.show{display:flex;}
+.btn-ghost{background:none;border:1px solid var(--border);color:var(--text);font-family:var(--font-ui);font-weight:600;font-size:12.5px;padding:7px 14px;border-radius:8px;cursor:pointer;}
+.btn-accent{background:var(--accent);color:#fff;border:none;font-family:var(--font-ui);font-weight:600;font-size:12.5px;padding:7px 14px;border-radius:8px;cursor:pointer;}
+.grip{display:none;color:var(--muted);font-family:var(--font-mono);letter-spacing:2px;margin-right:8px;cursor:grab;}
+.grid.editing .grip{display:inline;}
+.grid.editing .card{cursor:grab;}
+.grid.editing .card.dragging{opacity:.4;cursor:grabbing;}
+.grid.editing .card.drag-over{box-shadow:0 0 0 2px var(--accent) inset;}
+
 /* Card entrance stagger + hover-lift, matching `03-dashboard.html` —
    `fadeUp`/`.fade-up`/`flash` keyframes are shared (defined once in
    base.html so every page can use them), this page just applies them
@@ -62,12 +76,31 @@
     <h1>Dashboard</h1>
     <p class="lede" style="margin:0;">{{ board_label }}{% if os %} · {{ os }}{% endif %} · argonone-rs {{ version }}</p>
   </div>
-  <span class="live-indicator">Live · updated via WebSocket</span>
+  <div class="head-actions">
+    <span class="live-indicator">Live · updated via WebSocket</span>
+    {% if can_edit %}
+    <button class="btn-outline" id="customizeBtn" type="button">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h12M4 10h12M4 14h8"/></svg>
+      Customize layout
+    </button>
+    {% endif %}
+  </div>
 </div>
 
-<div class="grid">
-  <div class="card">
+{% if can_edit %}
+<div class="edit-banner" id="editBanner">
+  <span>Drag cards by the grip to reorder.</span>
+  <div style="display:flex;gap:8px;">
+    <button class="btn-ghost" id="resetLayoutBtn" type="button">Reset to default</button>
+    <button class="btn-accent" id="doneLayoutBtn" type="button">Done</button>
+  </div>
+</div>
+{% endif %}
+
+<div class="grid" id="dashGrid">
+  <div class="card" data-key="fan">
     <div class="card-head">
+      <span class="grip">⋮⋮</span>
       <div class="card-title">Fan control</div>
       <a class="card-link" href="/fan">Edit curve →</a>
     </div>
@@ -85,8 +118,9 @@
   </div>
 
   {% if is_eon %}
-  <div class="card">
+  <div class="card" data-key="power">
     <div class="card-head">
+      <span class="grip">⋮⋮</span>
       <div class="card-title">Power &amp; RTC</div>
       <span class="badge accent">EON</span>
     </div>
@@ -97,8 +131,9 @@
   </div>
   {% endif %}
 
-  <div class="card">
+  <div class="card" data-key="network">
     <div class="card-head">
+      <span class="grip">⋮⋮</span>
       <div class="card-title">Network</div>
       <span class="badge neutral" id="netIfaceBadge">--</span>
     </div>
@@ -113,8 +148,9 @@
     <p class="sub-line" id="netSub" style="margin:8px 0 0;">measuring…</p>
   </div>
 
-  <div class="card span2">
+  <div class="card span2" data-key="storage">
     <div class="card-head">
+      <span class="grip">⋮⋮</span>
       <div class="card-title">Storage</div>
       <a class="card-link" href="/storage">View all →</a>
     </div>
@@ -132,8 +168,9 @@
   </div>
 
   {% if is_eon %}
-  <div class="card">
+  <div class="card" data-key="display">
     <div class="card-head">
+      <span class="grip">⋮⋮</span>
       <div class="card-title">Display</div>
       <a class="card-link" href="/display">Configure →</a>
     </div>
@@ -144,8 +181,8 @@
   </div>
   {% endif %}
 
-  <div class="card">
-    <div class="card-head"><div class="card-title">System</div></div>
+  <div class="card" data-key="system">
+    <div class="card-head"><span class="grip">⋮⋮</span><div class="card-title">System</div></div>
     <table class="mini-table">
       <tr><td>Load avg</td><td id="sysLoadAvg">-- · -- · --</td></tr>
       <tr><td>Swap</td><td id="sysSwap">--</td></tr>
@@ -155,8 +192,8 @@
     </table>
   </div>
 
-  <div class="card">
-    <div class="card-head"><div class="card-title">Signed in as</div></div>
+  <div class="card" data-key="signedin">
+    <div class="card-head"><span class="grip">⋮⋮</span><div class="card-title">Signed in as</div></div>
     <table class="mini-table">
       <tr><td>User</td><td>{% if full_user and (full_user.first_name or full_user.last_name) %}{{ full_user.first_name }} {{ full_user.last_name }}{% else %}{{ username }}{% endif %}</td></tr>
       <tr><td>Username</td><td>@{{ username }}</td></tr>
@@ -168,6 +205,20 @@
 {% endblock %}
 {% block page_script %}
 <script>
+// Applies the saved card order for every viewer, not just those who can
+// edit it (a viewer-role account should still see whatever order an
+// operator saved) — reorders the already server-rendered cards rather
+// than re-templating their content, since the cards embed live data the
+// server already computed.
+(function () {
+  const dashGrid = document.getElementById('dashGrid');
+  const order = {{ dashboard_layout | tojson }};
+  order.forEach(key => {
+    const card = dashGrid.querySelector(`[data-key="${key}"]`);
+    if (card) dashGrid.appendChild(card);
+  });
+})();
+
 function formatRate(bytesPerSec) {
   if (bytesPerSec == null) return { value: '--', unit: '' };
   if (bytesPerSec >= 1048576) return { value: (bytesPerSec / 1048576).toFixed(1), unit: 'MB/s' };
@@ -276,6 +327,90 @@ document.body.addEventListener('htmx:wsAfterMessage', function (evt) {
   }
 });
 </script>
+{% if can_edit %}
+<script>
+// Customizable card layout (v0.7.0, W§3.7) — editing controls only;
+// the saved order itself is applied above for every viewer regardless
+// of role. Native HTML5 drag-and-drop, same pattern as
+// `templates/oled.html`'s screen-rotation list, just on a CSS grid
+// instead of a flex column.
+const dashGrid = document.getElementById('dashGrid');
+const customizeBtn = document.getElementById('customizeBtn');
+const editBanner = document.getElementById('editBanner');
+const doneLayoutBtn = document.getElementById('doneLayoutBtn');
+const resetLayoutBtn = document.getElementById('resetLayoutBtn');
+const DEFAULT_LAYOUT = {{ (
+  ["fan", "power", "network", "storage", "display", "system", "signedin"]
+) | tojson }};
+
+function applyLayoutOrder(order) {
+  order.forEach(key => {
+    const card = dashGrid.querySelector(`[data-key="${key}"]`);
+    if (card) dashGrid.appendChild(card);
+  });
+}
+
+async function saveLayout() {
+  const order = [...dashGrid.querySelectorAll('[data-key]')].map(c => c.dataset.key);
+  try {
+    await fetch('/api/settings/dashboard-layout', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order }),
+    });
+  } catch (e) {
+    // Best-effort — a failed save just means the next page load falls
+    // back to whatever was last successfully saved, not a dead end the
+    // operator needs to retry from a specific state.
+  }
+}
+
+function enterEditMode() {
+  dashGrid.classList.add('editing');
+  editBanner.classList.add('show');
+  customizeBtn.style.display = 'none';
+  dashGrid.querySelectorAll('[data-key]').forEach(c => { c.draggable = true; });
+}
+
+function exitEditMode() {
+  dashGrid.classList.remove('editing');
+  editBanner.classList.remove('show');
+  customizeBtn.style.display = '';
+  dashGrid.querySelectorAll('[data-key]').forEach(c => { c.draggable = false; });
+}
+
+customizeBtn.addEventListener('click', enterEditMode);
+doneLayoutBtn.addEventListener('click', exitEditMode);
+resetLayoutBtn.addEventListener('click', () => {
+  applyLayoutOrder(DEFAULT_LAYOUT);
+  saveLayout();
+});
+
+let dragEl = null;
+dashGrid.addEventListener('dragstart', (e) => {
+  const card = e.target.closest('[data-key]');
+  if (!card) return;
+  dragEl = card;
+  card.classList.add('dragging');
+});
+dashGrid.addEventListener('dragend', (e) => {
+  const card = e.target.closest('[data-key]');
+  if (!card) return;
+  card.classList.remove('dragging');
+  dragEl = null;
+  saveLayout();
+});
+dashGrid.addEventListener('dragover', (e) => {
+  if (!dragEl) return;
+  e.preventDefault();
+  const target = e.target.closest('[data-key]');
+  if (!target || target === dragEl) return;
+  const rect = target.getBoundingClientRect();
+  const before = (e.clientX - rect.left) < rect.width / 2;
+  dashGrid.insertBefore(dragEl, before ? target : target.nextSibling);
+});
+</script>
+{% endif %}
 {% if is_eon %}
 <script>
 // Live OLED thumbnail: same packed-bit framebuffer + canvas approach as

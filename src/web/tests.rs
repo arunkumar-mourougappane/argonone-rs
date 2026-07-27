@@ -2367,3 +2367,91 @@ async fn notifications_page_is_admin_only() {
     let body = resp.into_body().collect().await.unwrap().to_bytes();
     assert!(String::from_utf8_lossy(&body).contains("Notifications"));
 }
+
+#[tokio::test]
+async fn dashboard_layout_defaults_to_the_standard_order_and_viewer_can_read_it() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "viewer1", "viewer").await;
+
+    let resp = router
+        .clone()
+        .oneshot(empty_request(
+            "GET",
+            "/api/settings/dashboard-layout",
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        json["order"],
+        serde_json::json!([
+            "fan", "power", "network", "storage", "display", "system", "signedin"
+        ])
+    );
+}
+
+#[tokio::test]
+async fn viewer_cannot_write_dashboard_layout_but_operator_can() {
+    let (router, pool) = test_router().await;
+    let viewer_cookie = seed_and_login(&router, &pool, "viewer1", "viewer").await;
+
+    let forbidden = router
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            "/api/settings/dashboard-layout",
+            r#"{"order":["signedin","fan"]}"#,
+            &viewer_cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
+
+    let operator_cookie = seed_and_login(&router, &pool, "op1", "operator").await;
+    let ok = router
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            "/api/settings/dashboard-layout",
+            r#"{"order":["signedin","fan"]}"#,
+            &operator_cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(ok.status(), StatusCode::OK);
+    assert_eq!(
+        crate::db::settings::load_dashboard_layout(&pool).await,
+        vec![
+            "signedin", "fan", "power", "network", "storage", "display", "system"
+        ]
+    );
+}
+
+#[tokio::test]
+async fn dashboard_layout_put_sanitizes_unknown_and_duplicate_keys() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "op1", "operator").await;
+
+    let resp = router
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            "/api/settings/dashboard-layout",
+            r#"{"order":["bogus","fan","fan","storage"]}"#,
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        json["order"],
+        serde_json::json!([
+            "fan", "storage", "power", "network", "display", "system", "signedin"
+        ])
+    );
+}

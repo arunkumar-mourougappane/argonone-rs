@@ -261,6 +261,52 @@ pub async fn load_webhook_last_fired(pool: &DbPool) -> Option<String> {
         .flatten()
 }
 
+/// The seven dashboard cards, in their default order (v0.6.0's original
+/// card-grid layout, `03-dashboard.html`) — the fallback when nothing's
+/// been saved, and what "Reset to default" restores. EON-only cards
+/// (`power`, `display`) stay in this list even on a non-EON board; the
+/// template already skips rendering whichever ones don't apply.
+pub const DEFAULT_DASHBOARD_LAYOUT: [&str; 7] = [
+    "fan", "power", "network", "storage", "display", "system", "signedin",
+];
+
+/// Falls back to [`DEFAULT_DASHBOARD_LAYOUT`] when nothing's been saved
+/// yet, or the stored JSON is somehow corrupt — same pattern every other
+/// DB-backed setting here follows.
+pub async fn load_dashboard_layout(pool: &DbPool) -> Vec<String> {
+    let value: Option<String> =
+        sqlx::query_scalar("SELECT value FROM settings WHERE key = 'dashboard_layout'")
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+    value
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .unwrap_or_else(|| {
+            DEFAULT_DASHBOARD_LAYOUT
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        })
+}
+
+pub async fn save_dashboard_layout(
+    pool: &DbPool,
+    layout: &[String],
+    updated_by: i64,
+) -> Result<(), sqlx::Error> {
+    let value = serde_json::to_string(layout).expect("Vec<String> always serializes");
+    sqlx::query(
+        "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('dashboard_layout', ?1, datetime('now'), ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+    )
+    .bind(value)
+    .bind(updated_by)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -427,5 +473,33 @@ mod tests {
         assert_eq!(load_webhook_last_fired(&pool).await, None);
         record_webhook_fired(&pool).await.unwrap();
         assert!(load_webhook_last_fired(&pool).await.is_some());
+    }
+
+    #[tokio::test]
+    async fn load_dashboard_layout_defaults_to_the_standard_order_when_unset() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = crate::db::connect(&dir.path().join("t.db")).await.unwrap();
+        assert_eq!(
+            load_dashboard_layout(&pool).await,
+            DEFAULT_DASHBOARD_LAYOUT
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[tokio::test]
+    async fn save_then_load_dashboard_layout_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = crate::db::connect(&dir.path().join("t.db")).await.unwrap();
+        let user_id = seed_user(&pool).await;
+        let layout: Vec<String> = vec!["system", "fan", "signedin"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        save_dashboard_layout(&pool, &layout, user_id)
+            .await
+            .unwrap();
+        assert_eq!(load_dashboard_layout(&pool).await, layout);
     }
 }

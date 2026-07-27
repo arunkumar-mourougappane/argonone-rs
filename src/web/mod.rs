@@ -167,6 +167,10 @@ pub async fn build_router(
 
     let protected = Router::new()
         .route("/", get(dashboard::show))
+        .route(
+            "/api/settings/dashboard-layout",
+            get(dashboard::get_dashboard_layout).put(dashboard::put_dashboard_layout),
+        )
         .route("/api/ws", get(ws::handler))
         .route("/api/status", get(status::status))
         .route(
