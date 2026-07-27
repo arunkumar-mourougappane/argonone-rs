@@ -11,9 +11,7 @@ A Rust daemon, CLI, and web UI for Argon ONE/EON Raspberry Pi cases — I2C fan 
 
 ## Status
 
-Latest tagged release: **v0.6.2** (HTTPS over Tailscale-issued certs now verified end-to-end against a real Tailscale-joined device, and a listener-hang bug found in the process is fixed — a small unplanned fix on top of v0.6.1's Fahrenheit fan curve fix and v0.6.0's HTTPS/dashboard/hardening work; see [CHANGELOG.md](CHANGELOG.md#v062---2026-07-25)). See [docs/tailscale-setup.md](docs/tailscale-setup.md) for Tailscale HTTPS setup, validation, and troubleshooting.
-
-**v0.7.0 (packaging & operability) is complete on `main`, not yet tagged**: `.deb` packaging via `cargo-deb`, `admin backup`/`admin restore`, one-time legacy config-file import, a diagnosable read-only-rootfs startup error, critical-state webhook notifications, dashboard card drag-reorder, and a system log viewer — every item verified on real Ubuntu 26.04-on-Pi hardware, including both install paths (`.deb` and manual). See [CHANGELOG.md](CHANGELOG.md#unreleased) and [RELEASE_NOTES.md](RELEASE_NOTES.md).
+Latest tagged release: **v0.7.0** (packaging and operability): `.deb` packaging via `cargo-deb`, `admin backup`/`admin restore`, one-time legacy config-file import, a diagnosable read-only-rootfs startup error, critical-state webhook notifications, dashboard card drag-reorder, and a system log viewer — every item verified on real Ubuntu 26.04-on-Pi hardware, including both install paths (`.deb` and manual). See [CHANGELOG.md](CHANGELOG.md#v070---2026-07-26) and [docs/tailscale-setup.md](docs/tailscale-setup.md) for Tailscale HTTPS setup, validation, and troubleshooting.
 
 **ACME (Let's Encrypt/custom domain) HTTPS and IR remote learn/program are still not yet verified against real infrastructure/hardware** — both pass in-process tests but need a real domain and a real Argon case with an IR receiver to confirm end-to-end. Every hardware access goes through a `HardwareBackend` trait with a no-op fallback, so the daemon runs (and is testable) without the case attached.
 

@@ -6,6 +6,8 @@ This file is the permanent, cumulative log across every version. For the prose w
 
 ## [Unreleased]
 
+## [v0.7.0] - 2026-07-26
+
 v0.7.0 — packaging and operability. Every roadmap item is done; see [docs/ROADMAP.md](docs/ROADMAP.md#v070--packaging--operability).
 
 ### Added
