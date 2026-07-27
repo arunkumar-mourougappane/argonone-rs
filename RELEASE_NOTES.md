@@ -16,30 +16,10 @@
   See docs/releases/README.md for the full archive convention.
 -->
 
-## Overview
+## Highlights
 
-v0.6.2 is a small, unplanned fix on top of v0.6.1: HTTPS over Tailscale-issued certs is now verified end-to-end against a real Tailscale-joined device, and a bug found in the process — the HTTPS listener hanging indefinitely on every connection — is fixed.
+_Describe what's shipping in the next release._
 
-## What's Fixed
+## What's next
 
-- **HTTPS listener hang (Tailscale/ACME modes)** — `spawn_server` only put the TCP listener in non-blocking mode for plain-HTTP mode, not `tailscale`/`acme`. Passing a blocking listener into tokio's async accept loop (via `axum_server::from_tcp`) is erroneous per tokio's own docs — every TLS connection hung indefinitely right after the `Client Hello`, on both loopback and Tailscale-routed traffic. Now fixed for all three HTTPS modes.
-
-## What's New
-
-- [docs/tailscale-setup.md](docs/tailscale-setup.md) — a full Tailscale HTTPS setup and troubleshooting guide, written from an actual end-to-end setup: prerequisites, enabling HTTPS Certificates on your tailnet, validating cert issuance and client-side network reachability, and troubleshooting the issues above.
-
-## Deploying
-
-No new migrations since v0.4.0.
-
-```sh
-cargo install argonone-rs
-# or cross-compile / copy the binary to the Pi — see README.md, or use scripts/deploy.sh
-sudo systemctl restart argonone-rs
-```
-
-See [README.md](README.md) for full deployment instructions and [docs/tailscale-setup.md](docs/tailscale-setup.md) if you're setting up Tailscale HTTPS for the first time.
-
-## What's Next
-
-v0.7.0 turns to packaging and operability. See [docs/ROADMAP.md](docs/ROADMAP.md#v070--packaging--operability).
+_Point at what's coming after this._
