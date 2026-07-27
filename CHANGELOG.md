@@ -6,6 +6,24 @@ This file is the permanent, cumulative log across every version. For the prose w
 
 ## [Unreleased]
 
+v0.7.0 work in progress — packaging and operability. See [docs/ROADMAP.md](docs/ROADMAP.md#v070--packaging--operability).
+
+### Added
+
+- `.deb` packaging via `cargo-deb` (A§4.5): `Cargo.toml`'s `[package.metadata.deb]` bundles the systemd unit, an I2C udev rule (`packaging/udev/60-argonone-i2c.rules`), and `argonone` system-user creation into generated maintainer scripts (`packaging/deb/postinst`/`postrm`). The systemd unit moved from `User=root` to a dedicated `argonone` account (`SupplementaryGroups=dialout systemd-journal`); `scripts/deploy-local.sh` (the manual install path) does the same account/group setup so both paths land on the same permission model, and both now install the binary to `/usr/bin` instead of `/usr/local/bin`. `.github/workflows/release.yml` gained a required `build-deb` job so every tagged release publishes a `.deb` asset.
+- `argonone-rs admin backup --output <path>` / `admin restore --input <path>` (A§3.4): a parameterized `VACUUM INTO` for backup (no external `sqlite3` binary, no dot-command shell-quoting), and a migrate-then-checkpoint-then-atomic-rename restore.
+- One-time legacy config-file import: `argonone-rs admin import-legacy-config` (`src/config/import.rs`) imports `/etc/argon*.conf` into the DB for anyone upgrading from a v0.1.0/v0.2.0 install or the original Python daemon. Safe to run more than once — anything the DB already has is left untouched.
+- Diagnosable read-only-rootfs startup error (A§3.5): `db::diagnose_unwritable_state_dir` pre-flight-probes the state directory and reports EROFS/permission failures with an actionable message instead of a raw `sqlx::Error`, wired into `service::run` and every `admin` subcommand.
+- Critical-state webhook notification (W§3.8): one operator-configured webhook URL (`src/notify/mod.rs`, `src/web/notifications.rs`), POSTed once per severity transition into critical (CPU temp ≥ 75°C, disk temp ≥ 55°C, RAID degraded) — admin-only throughout, including reads, since a webhook URL can itself be a bearer secret. This app's first outbound network call.
+- Customizable dashboard card layout (W§3.7): drag-and-drop reorder of the dashboard's card grid, saved to a new `dashboard_layout` setting — same native HTML5 drag-and-drop pattern the OLED screen-rotation list already used.
+- System log viewer (W§3.8): admin-only `GET /logs` (`src/logs.rs`, `src/web/logs.rs`) tailing `journalctl -u argonone-rs` — level filter/color parsed from this app's own `tracing_subscriber` output (journalctl's own priority filter doesn't distinguish it, since everything's captured over plain stdout at the same syslog priority). "Follow (live)" is a 5s poll, not a genuine streaming tail.
+
+### Fixed
+
+- `rustls` could no longer auto-select a process-level `CryptoProvider`: adding `reqwest` (for the webhook notifier) put a second candidate crypto backend (`ring`) in reach alongside the `aws-lc-rs` one `rustls-acme`/`axum-server` already use. Fixed with an explicit `rustls::crypto::aws_lc_rs::default_provider().install_default()` in `main()`, and by pinning `reqwest` to a `-no-provider` TLS feature so it stops forcing `ring` in the first place.
+- The HDD fan curve fell back to the same generic CPU-shaped default as the CPU curve whenever nothing had been saved, making the two tabs on the fan curve page look nearly identical until HDD was explicitly edited. `FanCurve::default_hdd_curve()` gives it its own distinct default, matching the mockup's own `DEFAULT_HDD` preset.
+- The fan curve page's card had no `max-width`, so on a wide window the chart/table/buttons stretched to fill it instead of staying a compact, readable width like every other settings page's cards.
+
 ## [v0.6.2] - 2026-07-25
 
 ### Fixed
