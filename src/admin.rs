@@ -150,3 +150,32 @@ pub async fn restore(input: &Path) {
     println!("Restored {} to {}.", input.display(), db_path.display());
     println!("Stop and restart the argonone-rs service for this to take effect.");
 }
+
+/// One-time import of the legacy `/etc/argon*.conf` files into the DB
+/// (A§3.4) — for whoever is upgrading from a v0.1.0/v0.2.0 install or the
+/// original Python daemon, both of which left those files as the sole
+/// source of truth. Safe to run again later: anything already saved to
+/// the DB is left untouched rather than overwritten.
+pub async fn import_legacy_config() {
+    let db_path = crate::service::db_path();
+    let pool = open_db(&db_path).await;
+
+    let summary = crate::config::import::import_all(&pool).await;
+
+    if summary.is_empty() {
+        println!("No legacy config files found — nothing to import.");
+        return;
+    }
+    for item in &summary.imported {
+        println!("Imported {item}.");
+    }
+    for item in &summary.skipped {
+        println!("Skipped {item}.");
+    }
+    for item in &summary.errors {
+        eprintln!("error: {item}");
+    }
+    if !summary.errors.is_empty() {
+        std::process::exit(1);
+    }
+}

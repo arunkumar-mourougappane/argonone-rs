@@ -57,6 +57,10 @@ pub enum AdminCommand {
         #[arg(long)]
         input: PathBuf,
     },
+    /// One-time import of the legacy `/etc/argon*.conf` files into the DB
+    /// (A§3.4) — safe to run again later, since anything already saved to
+    /// the DB is left untouched rather than overwritten.
+    ImportLegacyConfig,
 }
 
 /// The legacy Python daemon was invoked as bare uppercase tokens

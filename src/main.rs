@@ -33,6 +33,7 @@ async fn main() {
             AdminCommand::ResetPassword { username } => admin::reset_password(&username).await,
             AdminCommand::Backup { output } => admin::backup(&output).await,
             AdminCommand::Restore { input } => admin::restore(&input).await,
+            AdminCommand::ImportLegacyConfig => admin::import_legacy_config().await,
         },
     }
 }

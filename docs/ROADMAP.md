@@ -371,7 +371,11 @@ Turns "a binary that works" into "a thing someone installs."
 - Legacy config-file → SQLite one-time import, for anyone upgrading from
   a v0.1.0/v0.2.0 install or the original Python daemon (ties off the
   "config files are the only source of truth until v0.3.0" note above —
-  this is where that migration actually has to land)
+  this is where that migration actually has to land). Done —
+  `src/config/import.rs`, `argonone-rs admin import-legacy-config`. Safe
+  to run more than once: anything the DB already has a value for
+  (checked directly, not via each type's own load-or-default fallback) is
+  left alone rather than clobbered by a stale file.
 - Install docs verified against real Ubuntu 26.04-on-Pi hardware — several
   claims in A§4.3 are flagged "needs hardware verification, not assumed";
   this is where that verification actually has to happen before shipping
