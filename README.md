@@ -11,7 +11,11 @@ A Rust daemon, CLI, and web UI for Argon ONE/EON Raspberry Pi cases — I2C fan 
 
 ## Status
 
-Latest tagged release: **v0.6.2** (HTTPS over Tailscale-issued certs now verified end-to-end against a real Tailscale-joined device, and a listener-hang bug found in the process is fixed — a small unplanned fix on top of v0.6.1's Fahrenheit fan curve fix and v0.6.0's HTTPS/dashboard/hardening work; see [CHANGELOG.md](CHANGELOG.md#v062---2026-07-25)). See [docs/tailscale-setup.md](docs/tailscale-setup.md) for Tailscale HTTPS setup, validation, and troubleshooting. **ACME (Let's Encrypt/custom domain) HTTPS and IR remote learn/program are still not yet verified against real infrastructure/hardware** — both pass in-process tests but need a real domain and a real Argon case with an IR receiver to confirm end-to-end. The most recent hardware-verified release is **v0.5.0**, deployed and confirmed on a real **Argon ONE**: board auto-detection (`Board::One`), the fan curve editor's live response, and the Users admin page end-to-end all confirmed on-device. Every hardware access goes through a `HardwareBackend` trait with a no-op fallback, so the daemon runs (and is testable) without the case attached.
+Latest tagged release: **v0.6.2** (HTTPS over Tailscale-issued certs now verified end-to-end against a real Tailscale-joined device, and a listener-hang bug found in the process is fixed — a small unplanned fix on top of v0.6.1's Fahrenheit fan curve fix and v0.6.0's HTTPS/dashboard/hardening work; see [CHANGELOG.md](CHANGELOG.md#v062---2026-07-25)). See [docs/tailscale-setup.md](docs/tailscale-setup.md) for Tailscale HTTPS setup, validation, and troubleshooting.
+
+**v0.7.0 (packaging & operability) is complete on `main`, not yet tagged**: `.deb` packaging via `cargo-deb`, `admin backup`/`admin restore`, one-time legacy config-file import, a diagnosable read-only-rootfs startup error, critical-state webhook notifications, dashboard card drag-reorder, and a system log viewer — every item verified on real Ubuntu 26.04-on-Pi hardware, including both install paths (`.deb` and manual). See [CHANGELOG.md](CHANGELOG.md#unreleased) and [RELEASE_NOTES.md](RELEASE_NOTES.md).
+
+**ACME (Let's Encrypt/custom domain) HTTPS and IR remote learn/program are still not yet verified against real infrastructure/hardware** — both pass in-process tests but need a real domain and a real Argon case with an IR receiver to confirm end-to-end. Every hardware access goes through a `HardwareBackend` trait with a no-op fallback, so the daemon runs (and is testable) without the case attached.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full v0.1.0 → v0.7.0 milestone plan (each item annotated `Done`/`Not yet done` against the code) and [CHANGELOG.md](CHANGELOG.md) for the dated, cumulative record of what's landed.
 
@@ -88,15 +92,18 @@ argonone-rs fanoff    # turn the fan off and exit
 
 The legacy uppercase spellings (`SERVICE`/`SHUTDOWN`/`FANOFF`) used by the original Python daemon's scripts and systemd units also work unchanged. A systemd unit is provided at [packaging/systemd/argonone-rs.service](packaging/systemd/argonone-rs.service).
 
-On an Argon EON, the daemon also drives the OLED dashboard (screen rotation configured via `/etc/argoneonoled.conf`: `switchduration`, `screensaver`, `screenlist`, `enabled`) and the RTC wake/sleep schedule (`/etc/argonrtc.conf`: `enabled`, `wake=HH:MM`, `sleep=HH:MM`) — both config-file only for now, no settings *screen* yet. On an Argon ONE or a bare Pi with no case, these are no-ops.
+On an Argon EON, the daemon also drives the OLED dashboard (screen rotation, timing, live preview — the **Display** page below) and the RTC wake/sleep schedule (a multi-entry, day-of-week table — the **System** page's Power & RTC card). Both are DB-backed, with the original `/etc/argoneonoled.conf`/`/etc/argonrtc.conf` formats only read as a fallback default (or via the one-time import below) until something's actually been saved through the web UI. On an Argon ONE or a bare Pi with no case, these are no-ops.
 
-`argonone-rs service` also starts the web server (default `0.0.0.0:8080`, SQLite state at `/var/lib/argonone-rs/argonone.db` — both overridable via `ARGONONE_BIND`/`ARGONONE_DB_PATH` for local dev). First visit forces a one-time admin account setup wizard; after that it's a normal login. Recovery, if the only admin gets locked out:
+`argonone-rs service` also starts the web server (default `0.0.0.0:8080`, SQLite state at `/var/lib/argonone-rs/argonone.db` — both overridable via `ARGONONE_BIND`/`ARGONONE_DB_PATH` for local dev). First visit forces a one-time admin account setup wizard; after that it's a normal login. Admin CLI subcommands, all direct-to-database and bypassing the web layer entirely:
 
 ```sh
-argonone-rs admin reset-password --username <name>
+argonone-rs admin reset-password --username <name>        # recovery if the only admin is locked out
+argonone-rs admin backup --output <path>                  # consistent live snapshot (VACUUM INTO), safe while running
+argonone-rs admin restore --input <path>                  # restore a prior backup — stop the service first
+argonone-rs admin import-legacy-config                     # one-time import of /etc/argon*.conf into the DB
 ```
 
-Once logged in, the sidebar has **Dashboard** (full card grid — Fan, Power & RTC, Network, Storage, Display, System, Signed-in-as), **Fan control** (draggable CPU/HDD curve editor — edits apply live, no restart), **Storage & RAID** (per-disk usage/temperature, array health), **Display** (EON-only OLED config + live preview), **System** (Celsius/Fahrenheit toggle, IR remote learn/program, HTTPS mode, firmware/service info), **Users** (admin-only account management), and **Audit log** (admin-only). Fan curve/unit/IR edits are operator+; HTTPS and Users are admin-only — viewers can look, not touch hardware or account settings. The server always enforces at least 25% fan at or above 75°C regardless of what a curve requests.
+Once logged in, the sidebar has **Dashboard** (full card grid — Fan, Power & RTC, Network, Storage, Display, System, Signed-in-as — drag-to-reorder via "Customize layout"), **Fan control** (draggable CPU/HDD curve editor — edits apply live, no restart), **Storage & RAID** (per-disk usage/temperature, array health), **Display** (EON-only OLED config + live preview), **System** (Celsius/Fahrenheit toggle, IR remote learn/program, HTTPS mode, firmware/service info), and, admin-only: **Users** (account management), **Audit log**, **Logs** (live `journalctl -u argonone-rs` tail), and **Notifications** (one webhook URL, fired on a CPU/disk-temp or RAID severity transition into critical). Fan curve/unit/IR/layout edits are operator+; HTTPS, Users, Logs, and Notifications are admin-only — viewers can look, not touch hardware, account, or system-visibility settings. The server always enforces at least 25% fan at or above 75°C regardless of what a curve requests.
 
 ### Troubleshooting
 
@@ -112,11 +119,11 @@ Once logged in, the sidebar has **Dashboard** (full card grid — Fan, Power & R
 
 ### Planned / research
 
-The web UI now covers every mockup screen — setup/login/session/RBAC, the full dashboard card grid, fan control, storage/RAID, system (including HTTPS and IR remote), Power & RTC scheduling, OLED config, Users admin, and the audit log — as of v0.3.0 through v0.6.0 (see Usage above). Still ahead: packaging and operability (v0.7.0) — see [docs/ROADMAP.md](docs/ROADMAP.md#v070--packaging--operability).
+The web UI now covers every mockup screen — setup/login/session/RBAC, the full (reorderable) dashboard card grid, fan control, storage/RAID, system (including HTTPS and IR remote), Power & RTC scheduling, OLED config, Users admin, audit log, system log viewer, and webhook notifications — as of v0.3.0 through v0.7.0 (see Usage above). No further milestone is planned yet; see [docs/ROADMAP.md](docs/ROADMAP.md)'s "Ongoing, not milestone-gated" section and its note on `v1.0.0` criteria, still an open call pending broader field use.
 
 - [docs/research-rust-backend-webui.md](docs/research-rust-backend-webui.md) — what the existing Argon40 Python stack does, proposed Rust daemon architecture, and web UI/UX research (target: homelab/NAS self-hosters).
 - [docs/research-auth-persistence-service.md](docs/research-auth-persistence-service.md) — forced first-run admin setup, multi-user RBAC, SQLite persistence, and systemd service install for Ubuntu 26.04 on Raspberry Pi.
-- [docs/mockups/](docs/mockups/00-index.html) — interactive HTML mockups of the full web UI (setup, login, dashboard, fan curve editor, storage/RAID, OLED display, users, system settings, audit log) — the target design; every screen is now real. Open `00-index.html` in a browser to start.
+- [docs/mockups/](docs/mockups/00-index.html) — interactive HTML mockups of the full web UI (setup, login, dashboard, fan curve editor, storage/RAID, OLED display, users, system settings, audit log, dashboard reorder, logs, notifications) — the target design; every screen is now real. Open `00-index.html` in a browser to start.
 
 ## License
 
