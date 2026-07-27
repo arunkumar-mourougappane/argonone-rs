@@ -47,6 +47,8 @@ pub fn build_env() -> Environment<'static> {
         include_str!("../../templates/notifications.html"),
     )
     .expect("notifications.html is valid minijinja syntax");
+    env.add_template("logs.html", include_str!("../../templates/logs.html"))
+        .expect("logs.html is valid minijinja syntax");
     env
 }
 

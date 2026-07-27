@@ -6,6 +6,7 @@ mod audit;
 mod dashboard;
 mod fan_curve;
 mod login;
+mod logs;
 mod notifications;
 mod oled;
 mod rtc;
@@ -218,6 +219,9 @@ pub async fn build_router(
             get(oled::get_config).put(oled::put_config),
         )
         .route("/api/oled/preview", get(oled::get_preview))
+        .route("/logs", get(logs::page))
+        .route("/api/logs", get(logs::get_logs))
+        .route("/api/logs/download", get(logs::download))
         .route("/notifications", get(notifications::page))
         .route(
             "/api/settings/webhook",

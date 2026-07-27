@@ -1,0 +1,117 @@
+{% extends "app_shell.html" %}
+{% block title %}Logs — argonone{% endblock %}
+{% block main %}
+<style>
+.toolbar{display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap;}
+.toolbar select{padding:8px 11px;border-radius:8px;border:1px solid var(--border);background:var(--panel);color:var(--text);font-family:var(--font-mono);font-size:12.5px;}
+.toolbar select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+.spacer{flex:1;}
+.toggle-follow{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:500;cursor:pointer;user-select:none;}
+.toggle{width:32px;height:18px;border-radius:9px;background:var(--good);position:relative;flex:none;transition:background-color .2s ease;}
+.toggle.off{background:var(--border);}
+.toggle i{position:absolute;top:2px;left:16px;width:14px;height:14px;border-radius:50%;background:#fff;transition:left .2s cubic-bezier(.34,1.56,.64,1);}
+.toggle.off i{left:2px;}
+.btn-outline{padding:8px 14px;border-radius:8px;border:1px solid var(--border);background:var(--panel);color:var(--text);font-family:var(--font-ui);font-weight:600;font-size:12.5px;cursor:pointer;text-decoration:none;display:inline-block;}
+.btn-outline:hover{background:var(--panel-2);}
+.log-card{background:#0a0d12;border:1px solid var(--border);border-radius:12px;padding:14px 0;overflow:hidden;}
+.log-lines{max-height:560px;overflow-y:auto;font-family:var(--font-mono);font-size:12px;line-height:1.9;}
+.log-line{padding:2px 20px;display:grid;grid-template-columns:230px 1fr;gap:12px;white-space:pre-wrap;word-break:break-word;}
+.log-line:hover{background:rgba(255,255,255,.03);}
+.log-ts{color:#5a6272;}
+.log-msg{color:#c6cbd6;}
+.log-line.warn .log-msg{color:#e3c98a;}
+.log-line.error .log-msg{color:#f0a5b0;}
+.log-empty{padding:20px;color:var(--muted);font-size:12.5px;}
+.err{color:var(--crit);font-size:12.5px;margin-bottom:14px;}
+@media (prefers-reduced-motion: no-preference){
+  .log-line.new{animation:lineIn .3s ease both;}
+}
+@keyframes lineIn{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+</style>
+<div class="page-head">
+  <h1>Logs</h1>
+  <p class="lede">Live tail of <code>journalctl -u argonone-rs</code> — read-only, no way to send commands from here.</p>
+</div>
+
+{% if error %}
+<p class="err">Couldn't read the journal: {{ error }}. If this is a permission error, make sure the <code>argonone</code> service account is in the <code>systemd-journal</code> group.</p>
+{% endif %}
+
+<div class="toolbar">
+  <select id="fSince">
+    <option value="15m" {% if since == "15m" %}selected{% endif %}>Last 15 minutes</option>
+    <option value="1h" {% if since == "1h" %}selected{% endif %}>Last hour</option>
+    <option value="24h" {% if since == "24h" %}selected{% endif %}>Last 24 hours</option>
+  </select>
+  <div class="spacer"></div>
+  <label class="toggle-follow"><span class="toggle" id="followToggle"><i></i></span>Follow (live)</label>
+  <a class="btn-outline" id="downloadBtn" href="/api/logs/download?since={{ since }}">Download .log</a>
+</div>
+
+<div class="log-card">
+  <div class="log-lines" id="logLines">
+    {% for l in lines %}
+    <div class="log-line {{ l.level }}"><span class="log-ts">{{ l.ts }}</span><span class="log-msg">{{ l.message }}</span></div>
+    {% else %}
+    <p class="log-empty">No log entries in this window.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
+{% block page_script %}
+<script>
+const fSince = document.getElementById('fSince');
+const followToggle = document.getElementById('followToggle');
+const downloadBtn = document.getElementById('downloadBtn');
+const logLines = document.getElementById('logLines');
+let following = true;
+let pollTimer = null;
+
+function renderLines(lines, animateNew) {
+  const previousCount = logLines.querySelectorAll('.log-line').length;
+  logLines.innerHTML = '';
+  if (lines.length === 0) {
+    logLines.innerHTML = '<p class="log-empty">No log entries in this window.</p>';
+    return;
+  }
+  lines.forEach((l, i) => {
+    const row = document.createElement('div');
+    const isNew = animateNew && i >= previousCount;
+    row.className = 'log-line ' + l.level + (isNew ? ' new' : '');
+    row.innerHTML = `<span class="log-ts">${l.ts}</span><span class="log-msg"></span>`;
+    row.querySelector('.log-msg').textContent = l.message;
+    logLines.appendChild(row);
+  });
+  logLines.scrollTop = logLines.scrollHeight;
+}
+
+async function refresh(animateNew) {
+  const resp = await fetch(`/api/logs?since=${encodeURIComponent(fSince.value)}`);
+  if (!resp.ok) return;
+  const data = await resp.json();
+  renderLines(data.lines, animateNew);
+}
+
+fSince.addEventListener('change', () => {
+  downloadBtn.href = `/api/logs/download?since=${encodeURIComponent(fSince.value)}`;
+  refresh(false);
+});
+
+function startPolling() {
+  stopPolling();
+  pollTimer = setInterval(() => refresh(true), 5000);
+}
+function stopPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = null;
+}
+
+followToggle.addEventListener('click', () => {
+  following = !following;
+  followToggle.classList.toggle('off', !following);
+  if (following) startPolling(); else stopPolling();
+});
+
+startPolling();
+</script>
+{% endblock %}

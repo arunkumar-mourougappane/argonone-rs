@@ -2455,3 +2455,58 @@ async fn dashboard_layout_put_sanitizes_unknown_and_duplicate_keys() {
         ])
     );
 }
+
+#[tokio::test]
+async fn logs_page_is_admin_only() {
+    let (router, pool) = test_router().await;
+    let operator_cookie = seed_and_login(&router, &pool, "op1", "operator").await;
+    let redirect = router
+        .clone()
+        .oneshot(empty_request("GET", "/logs", &operator_cookie))
+        .await
+        .unwrap();
+    assert_eq!(redirect.status(), StatusCode::SEE_OTHER);
+
+    let admin_cookie = seed_and_login(&router, &pool, "admin1", "admin").await;
+    let resp = router
+        .clone()
+        .oneshot(empty_request("GET", "/logs", &admin_cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    assert!(String::from_utf8_lossy(&body).contains("Logs"));
+}
+
+#[tokio::test]
+async fn logs_api_and_download_are_admin_only() {
+    let (router, pool) = test_router().await;
+    let operator_cookie = seed_and_login(&router, &pool, "op1", "operator").await;
+
+    let forbidden = router
+        .clone()
+        .oneshot(empty_request("GET", "/api/logs", &operator_cookie))
+        .await
+        .unwrap();
+    assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
+
+    let forbidden_dl = router
+        .clone()
+        .oneshot(empty_request("GET", "/api/logs/download", &operator_cookie))
+        .await
+        .unwrap();
+    assert_eq!(forbidden_dl.status(), StatusCode::FORBIDDEN);
+
+    // Whether journalctl is actually available on the host running this
+    // test is environment-dependent (it isn't on a non-Linux dev
+    // machine) — this only asserts the role gate itself let an admin
+    // through, not that the underlying journal read succeeded.
+    let admin_cookie = seed_and_login(&router, &pool, "admin1", "admin").await;
+    let resp = router
+        .clone()
+        .oneshot(empty_request("GET", "/api/logs", &admin_cookie))
+        .await
+        .unwrap();
+    assert_ne!(resp.status(), StatusCode::FORBIDDEN);
+    assert_ne!(resp.status(), StatusCode::UNAUTHORIZED);
+}

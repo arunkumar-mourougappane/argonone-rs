@@ -437,7 +437,20 @@ Turns "a binary that works" into "a thing someone installs."
   module): admin-only, read-only page tailing `journalctl -u
   argonone-rs` — the only way to see daemon logs today is SSH. Shells
   out the same way `sysinfo` already does for `smartctl`/`df`, no new
-  persistence. Mocked at `docs/mockups/12-logs.html`.
+  persistence. Mocked at `docs/mockups/12-logs.html`. Done — `src/logs.rs`
+  (shells out via `tokio::task::spawn_blocking`, same as `sysinfo`),
+  `src/web/logs.rs`/`templates/logs.html`. Level filtering doesn't use
+  `journalctl -p` — everything this app writes over plain stdout under
+  a `Type=notify` unit lands at the same syslog priority regardless of
+  the level its own `tracing_subscriber` formatter printed, so the
+  level shown/colored per line is parsed from that formatter's own
+  output instead. "Follow (live)" is a 5s poll that re-fetches and
+  re-renders the window, not a genuine streaming tail — deliberately,
+  to avoid a new WS message type/architecture for this. Depends on the
+  `.deb`/deploy-local.sh privilege-drop work above: a non-root
+  `argonone` account needs `systemd-journal` group membership to read
+  its own unit's journal at all, which this milestone's own package
+  work now grants.
 - Critical-state webhook notification (W§3.8, found comparing against
   Netdata's alert model): one configurable webhook URL, POSTed once on
   a severity transition into `crit` (CPU/disk temp, RAID degraded) —
