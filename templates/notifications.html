@@ -1,0 +1,122 @@
+{% extends "app_shell.html" %}
+{% block title %}Notifications — argonone{% endblock %}
+{% block main %}
+<style>
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:22px 24px;margin-bottom:16px;max-width:620px;}
+.card-title{font-weight:600;font-size:13.5px;margin-bottom:4px;}
+.card-hint{color:var(--muted);font-size:12px;margin:0 0 16px;}
+.switch-row{display:flex;align-items:center;justify-content:space-between;padding:2px 0 18px;}
+.sw-label{font-size:13px;font-weight:600;}
+.sw-sub{font-size:11.5px;color:var(--muted);margin-top:2px;}
+.toggle{width:36px;height:20px;border-radius:10px;background:var(--good);position:relative;flex:none;cursor:pointer;transition:background-color .2s ease;}
+.toggle.off{background:var(--border);}
+.toggle i{position:absolute;top:2px;left:18px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .2s cubic-bezier(.34,1.56,.64,1);}
+.toggle.off i{left:2px;}
+.field{margin-bottom:16px;}
+.field label{display:block;font-size:12.5px;font-weight:600;margin-bottom:7px;}
+.field .hint{font-weight:400;color:var(--muted);font-size:11.5px;}
+input[type=url]{width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);font-family:var(--font-mono);font-size:13px;}
+input[type=url]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+input[type=url]:disabled{opacity:.5;}
+.trigger-list{display:flex;flex-direction:column;gap:2px;}
+.trigger-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-top:1px solid var(--border);}
+.trigger-row:first-child{border-top:none;}
+.trigger-label{font-size:12.5px;font-weight:500;display:flex;align-items:center;gap:8px;}
+.badge{font-family:var(--font-mono);font-size:10.5px;padding:3px 9px;border-radius:20px;font-weight:600;}
+.badge.crit{background:var(--crit-soft);color:var(--crit);}
+.btn.ghost{background:none;border:1px solid var(--border);color:var(--text);margin-left:8px;}
+.btn:disabled{opacity:.5;cursor:default;}
+.status-line{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin-top:14px;}
+.status-line .dot{width:7px;height:7px;border-radius:50%;display:inline-block;background:var(--muted);}
+.err{color:var(--crit);font-size:12.5px;margin-top:10px;}
+@media (prefers-reduced-motion: no-preference){
+  .card{opacity:0;animation:fadeUp .5s cubic-bezier(.16,1,.3,1) forwards;}
+  .card:nth-of-type(1){animation-delay:.04s} .card:nth-of-type(2){animation-delay:.08s}
+}
+</style>
+<div class="page-head">
+  <h1>Notifications</h1>
+  <p class="lede">One webhook, fired once when a monitored value crosses into critical — not a full alerting engine.</p>
+</div>
+
+<div class="card">
+  <div class="switch-row">
+    <div><div class="sw-label">Webhook notifications</div><div class="sw-sub">Off by default — this is the only outbound network call this app makes</div></div>
+    <div class="toggle {% if not enabled %}off{% endif %}" id="enabledToggle"></div>
+  </div>
+  <div class="field">
+    <label>Webhook URL <span class="hint">— Discord, ntfy, Home Assistant, or anything accepting a plain JSON POST</span></label>
+    <input type="url" id="webhookUrl" placeholder="https://ntfy.sh/your-topic" value="{{ webhook_url | default(value='') }}" {% if not enabled %}disabled{% endif %}>
+  </div>
+  <button class="btn" id="saveBtn" type="button">Save</button>
+  <button class="btn ghost" id="testBtn" type="button" {% if not enabled or not webhook_url %}disabled{% endif %}>Send test</button>
+  <div class="err" id="formErr"></div>
+  <div class="status-line">
+    <span class="dot"></span>
+    <span id="statusText">{% if last_fired_at %}Last fired {{ last_fired_at }}{% else %}Never fired{% endif %}</span>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">Triggers</div>
+  <p class="card-hint">Fires once on the transition into critical, not on every poll — a value that stays critical won't re-notify until it clears and re-triggers.</p>
+  <div class="trigger-list">
+    <div class="trigger-row"><span class="trigger-label">CPU temperature <span class="badge crit">&ge; 75&deg;C</span></span></div>
+    <div class="trigger-row"><span class="trigger-label">Disk temperature <span class="badge crit">&ge; 55&deg;C</span></span></div>
+    <div class="trigger-row"><span class="trigger-label">RAID array <span class="badge crit">degraded</span></span></div>
+  </div>
+</div>
+{% endblock %}
+{% block page_script %}
+<script>
+const enabledToggle = document.getElementById('enabledToggle');
+const webhookUrl = document.getElementById('webhookUrl');
+const saveBtn = document.getElementById('saveBtn');
+const testBtn = document.getElementById('testBtn');
+const formErr = document.getElementById('formErr');
+const statusText = document.getElementById('statusText');
+
+function syncTestEnabled() {
+  testBtn.disabled = enabledToggle.classList.contains('off') || !webhookUrl.value.trim();
+}
+
+enabledToggle.addEventListener('click', () => {
+  const on = !enabledToggle.classList.toggle('off');
+  webhookUrl.disabled = !on;
+  syncTestEnabled();
+});
+
+webhookUrl.addEventListener('input', syncTestEnabled);
+
+saveBtn.addEventListener('click', async () => {
+  formErr.textContent = '';
+  const resp = await fetch('/api/settings/webhook', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      enabled: !enabledToggle.classList.contains('off'),
+      url: webhookUrl.value.trim() || null,
+    }),
+  });
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    formErr.textContent = body.error || 'Failed to save notification settings.';
+    return;
+  }
+  syncTestEnabled();
+  showToast('Notification settings saved');
+});
+
+testBtn.addEventListener('click', async () => {
+  formErr.textContent = '';
+  const resp = await fetch('/api/settings/webhook/test', { method: 'POST' });
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    formErr.textContent = body.error || 'Test notification failed.';
+    return;
+  }
+  statusText.textContent = 'Last fired just now';
+  showToast('Test notification sent');
+});
+</script>
+{% endblock %}

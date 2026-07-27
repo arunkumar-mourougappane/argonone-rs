@@ -6,6 +6,7 @@
 
 use super::DbPool;
 use crate::config::{ConfigPaths, HttpsConfig, OledConfig, RtcSchedule, TempUnit};
+use crate::notify::WebhookConfig;
 use rand::distr::{Alphanumeric, SampleString};
 use std::path::Path;
 
@@ -206,6 +207,60 @@ pub async fn clear_setup_token(
     Ok(())
 }
 
+/// Falls back to [`WebhookConfig::default`] (disabled, no URL) when
+/// nothing's been configured yet — matches every other DB-backed
+/// setting's fallback-to-default pattern.
+pub async fn load_webhook_config(pool: &DbPool) -> WebhookConfig {
+    let value: Option<String> =
+        sqlx::query_scalar("SELECT value FROM settings WHERE key = 'webhook_config'")
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+    value
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .unwrap_or_default()
+}
+
+pub async fn save_webhook_config(
+    pool: &DbPool,
+    config: &WebhookConfig,
+    updated_by: i64,
+) -> Result<(), sqlx::Error> {
+    let value = serde_json::to_string(config).expect("WebhookConfig always serializes");
+    sqlx::query(
+        "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('webhook_config', ?1, datetime('now'), ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+    )
+    .bind(value)
+    .bind(updated_by)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// When the webhook last actually fired, for the settings page's status
+/// line. System-triggered (the control loop, not a web session), so
+/// unlike every other setting here there's no acting user to record —
+/// `updated_by` stays `NULL`, which the column already allows.
+pub async fn record_webhook_fired(pool: &DbPool) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('webhook_last_fired_at', datetime('now'), datetime('now'), NULL)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn load_webhook_last_fired(pool: &DbPool) -> Option<String> {
+    sqlx::query_scalar("SELECT value FROM settings WHERE key = 'webhook_last_fired_at'")
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -343,5 +398,34 @@ mod tests {
         };
         save_https_config(&pool, &config, user_id).await.unwrap();
         assert_eq!(load_https_config(&pool).await, config);
+    }
+
+    #[tokio::test]
+    async fn load_webhook_config_defaults_to_disabled_when_unset() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = crate::db::connect(&dir.path().join("t.db")).await.unwrap();
+        assert_eq!(load_webhook_config(&pool).await, WebhookConfig::default());
+    }
+
+    #[tokio::test]
+    async fn save_then_load_webhook_config_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = crate::db::connect(&dir.path().join("t.db")).await.unwrap();
+        let user_id = seed_user(&pool).await;
+        let config = WebhookConfig {
+            enabled: true,
+            url: Some("https://ntfy.sh/my-topic".to_string()),
+        };
+        save_webhook_config(&pool, &config, user_id).await.unwrap();
+        assert_eq!(load_webhook_config(&pool).await, config);
+    }
+
+    #[tokio::test]
+    async fn webhook_last_fired_defaults_to_none_then_records_a_timestamp() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = crate::db::connect(&dir.path().join("t.db")).await.unwrap();
+        assert_eq!(load_webhook_last_fired(&pool).await, None);
+        record_webhook_fired(&pool).await.unwrap();
+        assert!(load_webhook_last_fired(&pool).await.is_some());
     }
 }

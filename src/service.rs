@@ -126,6 +126,10 @@ pub async fn run() {
     let (rtc_schedule_tx, mut rtc_schedule_rx) = tokio::sync::watch::channel(rtc_schedule.clone());
     let (oled_config_tx, mut oled_config_rx) = tokio::sync::watch::channel(oled_cfg.clone());
     let (oled_screen_tx, oled_screen_rx) = tokio::sync::watch::channel(None::<Screen>);
+    let mut webhook_config = crate::db::settings::load_webhook_config(&pool).await;
+    let (webhook_config_tx, mut webhook_config_rx) =
+        tokio::sync::watch::channel(webhook_config.clone());
+    let mut alert_tracker = crate::notify::AlertTracker::default();
 
     let https_config = crate::db::settings::load_https_config(&pool).await;
     let bind_addr = bind_addr(https_config.mode);
@@ -141,7 +145,7 @@ pub async fn run() {
         }
     };
     let router = crate::web::build_router(
-        pool,
+        pool.clone(),
         hw.board,
         fan_speed_rx,
         disk_temp_rx,
@@ -153,6 +157,7 @@ pub async fn run() {
         oled_screen_rx,
         hw.fan.clone(),
         https_config.mode,
+        webhook_config_tx,
     )
     .await;
     tracing::info!(addr = %bind_addr, mode = https_config.mode.as_str(), "web server listening");
@@ -198,6 +203,44 @@ pub async fn run() {
                         &mut rtc_last_sleep_trigger,
                     );
                 }
+
+                // Critical-state webhook notification (v0.7.0, W§3.8):
+                // transitions are tracked unconditionally, even while
+                // disabled, so flipping the toggle on later doesn't
+                // immediately re-fire for a value that's been critical
+                // all along.
+                let cpu_temp_c = sysinfo::read_cpu_temp_c();
+                let disk_temps: Vec<(String, Option<f32>)> = snapshot
+                    .iter()
+                    .map(|d| (d.device.name.clone(), d.temp_c))
+                    .collect();
+                let raid_degraded: Vec<(String, bool)> = sysinfo::read_raid_status()
+                    .into_iter()
+                    .map(|a| (a.name.clone(), a.failed_disks() > 0))
+                    .collect();
+                let alerts = alert_tracker.check(cpu_temp_c, &disk_temps, &raid_degraded);
+                if !alerts.is_empty() {
+                    if let Some(url) = webhook_config.url.clone().filter(|_| webhook_config.enabled) {
+                        let pool = pool.clone();
+                        tokio::spawn(async move {
+                            for alert in alerts {
+                                match crate::notify::send(&url, &alert).await {
+                                    Ok(()) => {
+                                        if let Err(e) = crate::db::settings::record_webhook_fired(&pool).await {
+                                            tracing::warn!(error = %e, "failed to record webhook-fired timestamp");
+                                        }
+                                    }
+                                    Err(e) => tracing::warn!(error = %e, source = alert.source, "webhook notification failed"),
+                                }
+                            }
+                        });
+                    } else if webhook_config.enabled {
+                        tracing::warn!(count = alerts.len(), "webhook notifications enabled but no URL configured, skipping");
+                    }
+                }
+            }
+            Ok(()) = webhook_config_rx.changed() => {
+                webhook_config = webhook_config_rx.borrow_and_update().clone();
             }
             Ok(()) = cpu_curve_rx.changed() => {
                 fan_controller.set_curve(cpu_curve_rx.borrow_and_update().clone());

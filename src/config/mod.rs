@@ -10,6 +10,14 @@ use std::path::Path;
 
 pub mod import;
 
+/// The fan-curve safety ceiling (W§2.8): past this point the server-
+/// enforced floor already demands near-maximum fan speed regardless of
+/// what curve is configured. Also the CPU-temperature critical threshold
+/// for the webhook notification trigger (v0.7.0, `13-notifications.html`)
+/// and the dashboard's own `cpuTempSeverity` JS helper — one number,
+/// three consumers, so it can't drift between them.
+pub const SAFETY_CEILING_C: f32 = 75.0;
+
 #[derive(Debug)]
 pub struct ConfigError {
     pub path: String,
@@ -78,7 +86,6 @@ impl FanCurve {
     /// function that only changes value at breakpoints, so that set
     /// fully characterizes its behavior across `[SAFETY_CEILING_C, ∞)`.
     pub fn violates_safety_floor(&self) -> bool {
-        const SAFETY_CEILING_C: f32 = 75.0;
         const MIN_SAFE_PCT: u8 = 25;
         let mut checkpoints: Vec<f32> = self
             .0

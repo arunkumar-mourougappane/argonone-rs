@@ -32,6 +32,8 @@ async fn test_router_with_board(
         tokio::sync::watch::channel(crate::config::OledConfig::default_config());
     let (_oled_screen_tx, oled_screen_rx) =
         tokio::sync::watch::channel(None::<crate::oled::Screen>);
+    let (webhook_config_tx, _) =
+        tokio::sync::watch::channel(crate::notify::WebhookConfig::default());
     let router = build_router(
         pool.clone(),
         board,
@@ -45,6 +47,7 @@ async fn test_router_with_board(
         oled_screen_rx,
         std::sync::Arc::new(crate::hardware::noop::NoopFan),
         crate::config::HttpsMode::Off,
+        webhook_config_tx,
     )
     .await;
     (router, pool)
@@ -835,6 +838,8 @@ async fn ir_learn_does_not_block_other_requests_on_the_runtime() {
         tokio::sync::watch::channel(crate::config::OledConfig::default_config());
     let (_oled_screen_tx, oled_screen_rx) =
         tokio::sync::watch::channel(None::<crate::oled::Screen>);
+    let (webhook_config_tx, _) =
+        tokio::sync::watch::channel(crate::notify::WebhookConfig::default());
     let router = build_router(
         pool.clone(),
         crate::hardware::board::Board::Eon,
@@ -848,6 +853,7 @@ async fn ir_learn_does_not_block_other_requests_on_the_runtime() {
         oled_screen_rx,
         std::sync::Arc::new(SlowLearnFan),
         crate::config::HttpsMode::Off,
+        webhook_config_tx,
     )
     .await;
 
@@ -1938,6 +1944,8 @@ async fn oled_preview_renders_the_currently_selected_screen() {
         tokio::sync::watch::channel(crate::config::OledConfig::default_config());
     let (_oled_screen_tx, oled_screen_rx) =
         tokio::sync::watch::channel(Some(crate::oled::Screen::Clock));
+    let (webhook_config_tx, _) =
+        tokio::sync::watch::channel(crate::notify::WebhookConfig::default());
     let router = build_router(
         pool.clone(),
         crate::hardware::board::Board::Eon,
@@ -1951,6 +1959,7 @@ async fn oled_preview_renders_the_currently_selected_screen() {
         oled_screen_rx,
         std::sync::Arc::new(crate::hardware::noop::NoopFan),
         crate::config::HttpsMode::Off,
+        webhook_config_tx,
     )
     .await;
 
@@ -2243,4 +2252,118 @@ async fn login_page_shows_password_updated_notice() {
     assert_eq!(resp.status(), StatusCode::OK);
     let body = resp.into_body().collect().await.unwrap().to_bytes();
     assert!(String::from_utf8_lossy(&body).contains("Password updated"));
+}
+
+#[tokio::test]
+async fn webhook_config_defaults_to_disabled_and_operator_cannot_read_or_write_it() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "op1", "operator").await;
+
+    let get = router
+        .clone()
+        .oneshot(empty_request("GET", "/api/settings/webhook", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(get.status(), StatusCode::FORBIDDEN);
+
+    let put = router
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            "/api/settings/webhook",
+            r#"{"enabled":true,"url":"https://ntfy.sh/topic"}"#,
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(put.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn admin_can_read_default_and_then_set_webhook_config() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "admin1", "admin").await;
+
+    let get = router
+        .clone()
+        .oneshot(empty_request("GET", "/api/settings/webhook", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(get.status(), StatusCode::OK);
+    let body = get.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["enabled"], false);
+    assert_eq!(json["url"], serde_json::Value::Null);
+
+    let put = router
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            "/api/settings/webhook",
+            r#"{"enabled":true,"url":"https://ntfy.sh/topic"}"#,
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(put.status(), StatusCode::OK);
+    assert_eq!(
+        crate::db::settings::load_webhook_config(&pool).await,
+        crate::notify::WebhookConfig {
+            enabled: true,
+            url: Some("https://ntfy.sh/topic".to_string()),
+        }
+    );
+}
+
+#[tokio::test]
+async fn webhook_config_rejects_enabling_without_a_url() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "admin1", "admin").await;
+
+    let put = router
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            "/api/settings/webhook",
+            r#"{"enabled":true}"#,
+            &cookie,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(put.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn webhook_test_requires_a_saved_enabled_config() {
+    let (router, pool) = test_router().await;
+    let cookie = seed_and_login(&router, &pool, "admin1", "admin").await;
+
+    let resp = router
+        .clone()
+        .oneshot(empty_request("POST", "/api/settings/webhook/test", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn notifications_page_is_admin_only() {
+    let (router, pool) = test_router().await;
+    let operator_cookie = seed_and_login(&router, &pool, "op1", "operator").await;
+    let redirect = router
+        .clone()
+        .oneshot(empty_request("GET", "/notifications", &operator_cookie))
+        .await
+        .unwrap();
+    assert_eq!(redirect.status(), StatusCode::SEE_OTHER);
+
+    let admin_cookie = seed_and_login(&router, &pool, "admin1", "admin").await;
+    let resp = router
+        .clone()
+        .oneshot(empty_request("GET", "/notifications", &admin_cookie))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    assert!(String::from_utf8_lossy(&body).contains("Notifications"));
 }

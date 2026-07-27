@@ -415,7 +415,19 @@ Turns "a binary that works" into "a thing someone installs."
   multi-channel notification engine — one URL, opt-in, fires on
   transitions only. This app's first outbound network call, so treat it
   deliberately rather than bolt it on. Mocked at
-  `docs/mockups/13-notifications.html`.
+  `docs/mockups/13-notifications.html`. Done — `src/notify/mod.rs`
+  (`AlertTracker`, tracking each source's last-seen crit/non-crit state
+  in memory so a value that stays critical doesn't re-fire; `send`, a
+  plain-JSON `reqwest` POST), `src/web/notifications.rs`/
+  `templates/notifications.html` (admin-only throughout, including
+  reads — unlike `system.rs::get_https`'s mode/domain, a webhook URL can
+  itself be a bearer secret), `db/settings.rs`
+  (`load`/`save_webhook_config`, `record`/`load_webhook_last_fired`).
+  The CPU-critical threshold (75°C) is the same constant as the fan
+  curve's own safety ceiling (`config::SAFETY_CEILING_C`), not a
+  separately-maintained number. Checked every 30s poll alongside the
+  existing disk-temp/RAID read, alert delivery `tokio::spawn`ed so a
+  slow/unreachable webhook can't stall the fan control loop.
 
 ---
 

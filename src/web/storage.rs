@@ -26,8 +26,10 @@ fn usage_severity(pct: u8) -> &'static str {
 
 /// Disk temperature severity banding, in Celsius regardless of display
 /// unit — thresholds are a hardware property, not something that should
-/// shift with the operator's C/F preference.
-fn temp_severity(celsius: f32) -> &'static str {
+/// shift with the operator's C/F preference. `pub(crate)` so the webhook
+/// notification tracker (`src/notify/mod.rs`, v0.7.0) reuses this exact
+/// banding for its own disk-temperature-critical trigger.
+pub(crate) fn temp_severity(celsius: f32) -> &'static str {
     if celsius >= 55.0 {
         "crit"
     } else if celsius >= 45.0 {

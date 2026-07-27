@@ -6,11 +6,12 @@ mod audit;
 mod dashboard;
 mod fan_curve;
 mod login;
+mod notifications;
 mod oled;
 mod rtc;
 mod setup;
 mod status;
-mod storage;
+pub(crate) mod storage;
 mod system;
 pub mod templates;
 #[cfg(test)]
@@ -21,6 +22,7 @@ mod ws;
 use crate::auth::Backend;
 use crate::config::{FanCurve, OledConfig, RtcSchedule, TempUnit};
 use crate::db::DbPool;
+use crate::notify::WebhookConfig;
 use crate::oled::Screen;
 use axum::Router;
 use axum::extract::{Request, State};
@@ -65,6 +67,7 @@ pub struct AppState {
     pub units_tx: tokio::sync::watch::Sender<TempUnit>,
     pub rtc_schedule_tx: tokio::sync::watch::Sender<RtcSchedule>,
     pub oled_config_tx: tokio::sync::watch::Sender<OledConfig>,
+    pub webhook_config_tx: tokio::sync::watch::Sender<WebhookConfig>,
     /// Published by the service loop's OLED render tick, not a web write
     /// path — the live preview (`src/web/oled.rs`) and `/api/ws`'s
     /// `oled_screen` message both read from this.
@@ -90,6 +93,7 @@ pub async fn build_router(
     oled_screen: tokio::sync::watch::Receiver<Option<Screen>>,
     fan: Arc<dyn crate::hardware::FanBackend>,
     https_mode: crate::config::HttpsMode,
+    webhook_config_tx: tokio::sync::watch::Sender<WebhookConfig>,
 ) -> Router {
     let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
         .fetch_one(&pool)
@@ -141,6 +145,7 @@ pub async fn build_router(
         oled_config_tx,
         oled_screen,
         fan,
+        webhook_config_tx,
     };
 
     let session_store = SqliteStore::new(pool);
@@ -209,6 +214,15 @@ pub async fn build_router(
             get(oled::get_config).put(oled::put_config),
         )
         .route("/api/oled/preview", get(oled::get_preview))
+        .route("/notifications", get(notifications::page))
+        .route(
+            "/api/settings/webhook",
+            get(notifications::get_webhook).put(notifications::put_webhook),
+        )
+        .route(
+            "/api/settings/webhook/test",
+            post(notifications::test_webhook),
+        )
         .route_layer(middleware::from_fn(login::require_login));
 
     let public = Router::new()
