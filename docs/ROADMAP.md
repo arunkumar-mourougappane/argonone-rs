@@ -484,6 +484,163 @@ Turns "a binary that works" into "a thing someone installs."
 
 ---
 
+## v0.8.0 — Observability
+
+Turns "you can watch the live dashboard" into "you can watch trends over time,
+from outside a browser tab." Scoped from
+[docs/research-prometheus-metrics.md](research-prometheus-metrics.md); not
+started yet. First of eight single-feature minor releases (v0.8.0–v0.15.0)
+covering everything researched after v0.7.0 shipped — one feature per
+milestone this time, rather than bundling several into one version the way
+v0.6.0/v0.7.0 did, since none of these share a common theme the way that
+packaging-and-operability work did.
+
+- Prometheus `/metrics` endpoint: exports the same data `/api/status` and the
+  dashboard's WebSocket feed already read — CPU/disk temp, fan %, RAM/swap,
+  load average, network throughput, RAID state, HTTPS cert expiry — no new
+  sampling code, purely a new export surface. `metrics` 0.24 +
+  `metrics-exporter-prometheus` 0.18, mounted as a route via
+  `PrometheusHandle::render()` rather than that crate's own bundled HTTP
+  server, so this app still owns exactly one listener. The real design
+  question isn't the metrics, it's auth: every route today requires a login
+  session, which a Prometheus scrape target can't do. Planned: an
+  admin-configured bearer token checked ahead of the session middleware
+  (same "a secret is itself sensitive" precedent as the webhook URL), not a
+  fully public endpoint. No new mockup for the scrape endpoint itself (not a
+  browsable page) — planned as a new card on the existing `/system` page,
+  small enough not to cross the threshold that got Notifications/Logs their
+  own sidebar page + mockup.
+
+---
+
+## v0.9.0 — Two-factor authentication
+
+Not started. Scoped from [docs/research-totp-2fa.md](research-totp-2fa.md).
+
+- TOTP two-factor authentication: `totp-rs` 5.7.2 for secret/QR/verification,
+  a new migration (`users.totp_secret`/`totp_enabled` plus a
+  `totp_recovery_codes` table — never edit `migrations/0001_init.sql` in
+  place, it's already checksummed on real installs), and the key design
+  call: gate the pending-second-factor state using the exact same
+  `require_login`/`must_change_pw` middleware pattern already shipped,
+  rather than inventing a new pre-session auth state machine. Recovery
+  codes Argon2id-hashed like passwords, shown once at enrollment. Mocked at
+  `docs/mockups/15-login-2fa.html` (the post-password challenge screen) and
+  `docs/mockups/16-account-2fa.html` (enable/manage, on the existing
+  Account page).
+
+---
+
+## v0.10.0 — Active session management
+
+Not started. Scoped from
+[docs/research-active-sessions.md](research-active-sessions.md); pairs
+naturally with v0.9.0 — once a second factor protects login, "what if a
+session cookie leaks anyway" is the next real question.
+
+- List/revoke your own logged-in sessions. The session store's `data`
+  column is an opaque MessagePack blob (no queryable `user_id`/`ip`/
+  `last_seen`), so this needs a new `session_metadata` side table populated
+  by a per-request middleware, not a query against the existing
+  `tower_sessions` table alone. A coarser version of this already ships for
+  free: changing a password already invalidates every session for that
+  account via `session_auth_hash`, so this only adds the missing scalpel
+  (revoke one session) next to that existing hammer. Self-service only —
+  never another user's sessions, even for an admin. Mocked at
+  `docs/mockups/18-account-sessions.html`.
+
+---
+
+## v0.11.0 — Notification target formats
+
+Not started. Scoped from
+[docs/research-notification-target-formats.md](research-notification-target-formats.md).
+
+- Per-target webhook body formats (Discord/ntfy/Home Assistant): checked
+  the v0.7.0 webhook notifier's own advertised compatibility against each
+  target's real API. Home Assistant works (schema-agnostic), ntfy delivers
+  but shows the raw JSON as the message body instead of clean text, and
+  Discord fails outright (400 — its webhook endpoint requires a
+  `content`/`embeds`/etc field none of today's fixed body has). Fix: a
+  `format: Generic|Discord|Ntfy` enum on `WebhookConfig`, branching
+  `notify::send`'s body construction — one new `<select>` on the existing
+  Notifications page, no new mockup needed.
+
+---
+
+## v0.12.0 — Portable settings export/import
+
+Not started. Scoped from
+[docs/research-config-export-import.md](research-config-export-import.md).
+
+- `argonone-rs admin export-settings`/`import-settings`: a JSON export of
+  just the DB-backed settings and fan curves, distinct from `admin
+  backup`/`restore`'s raw SQLite snapshot (which brings every user account
+  and password hash with it, the wrong tool for moving tuning between two
+  installs). CLI-only, no web UI and no mockup, matching the existing
+  `admin backup`/`restore`/`import-legacy-config` precedent.
+
+---
+
+## v0.13.0 — Self-update check
+
+Not started. Scoped from
+[docs/research-self-update-check.md](research-self-update-check.md).
+
+- Read-only "newer version available" check against GitHub's public
+  releases API, explicitly not an auto-updater. Off by default:
+  `src/notify/mod.rs`'s own doc comment calls the webhook notifier "this
+  app's first outbound network call," and an always-on update check would
+  make that simply false while contradicting this project's existing
+  opt-in-outbound-calls posture. Component reference at
+  `docs/mockups/17-system-update-banner.html` — a new state on the existing
+  "Firmware & service" card, not a new page.
+
+---
+
+## v0.14.0 — Quiet-hours fan profile
+
+Not started. Scoped from
+[docs/research-quiet-hours-fan-profile.md](research-quiet-hours-fan-profile.md).
+
+- Caps fan speed on a nightly day-of-week window; works on an Argon ONE
+  too, since it only needs the system wall clock (the same `date`-shellout
+  convention `src/web/dashboard.rs` already uses), not the EON's RTC chip.
+  The one hard rule, caught and fixed during review: the cap must apply to
+  the CPU curve's own output *before* the HDD curve's demand is folded in
+  via `.max()`, never after — otherwise quiet hours could silently
+  suppress either the 75°C CPU safety floor or a legitimate HDD-driven
+  demand, exactly the two guarantees this app's fan control already makes
+  today. Mocked at `docs/mockups/19-quiet-hours.html`, as a new card on the
+  existing Fan control page (deliberately not scoped to the CPU/HDD curve
+  tabs — it caps the one physical fan output, downstream of both).
+
+---
+
+## v0.15.0 — UPS/battery status
+
+Not started, **low priority**. Scoped from
+[docs/research-ups-battery.md](research-ups-battery.md); last of this
+sequence deliberately — see why below.
+
+- UPS/battery status for the optional Argon Industria UPS add-on (EON).
+  The dashboard mockup's "Power source"/"Battery" rows are currently
+  hardcoded placeholders (`docs/mockups/03-dashboard.html`), since "No
+  UPS/battery data exists anywhere in this codebase" (this doc's v0.6.0
+  entry above). Not I2C: the UPS daemon is a separate, optionally-installed
+  third-party Python process (`argononeupsd.py`, fetched on demand by
+  `argonone-upsconfig.sh`, never part of this project's own source) that
+  writes plain-text status to `/dev/shm/upslog.txt` — `argonone-rs` could
+  tail that file if present, the same way the original curses dashboard
+  did. Staying last/low priority: it's an optional, separately-purchased
+  add-on most owners don't have, the only buildable path depends on a
+  third-party daemon this project doesn't control, and nobody's asked for
+  it yet. Component reference at `docs/mockups/14-ups-battery.html` — not a
+  new sidebar page, just the Power & RTC card's real states
+  (plugged/charging/on-battery-warn/on-battery-crit/absent).
+
+---
+
 ## Ongoing, not milestone-gated
 
 - `cargo-audit` / CI already blocks on every push, not scheduled per
